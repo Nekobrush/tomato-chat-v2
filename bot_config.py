@@ -1,60 +1,90 @@
-from datetime import timedelta
-from nonebot.default_config import *
+"""番茄猫娘的业务配置。
 
-# 超级管理员QQ号列表
-super_admin_users = ["114514"]
+这里只放机器人自身的业务配置（模型、概率、群号、生成参数……）。
+服务端口、管理员、日志等级等 NoneBot 原生配置放在 `.env` 里。
 
-# 管理员QQ号列表(填写超级管理员自动适配管理员)
-admin_users = ["1919810"]
+注意：本文件在 NoneBot 初始化之前就会被导入，所以**不要**在这里导入 nonebot。
+"""
 
-# 开放的群聊
-allow_groups = ["893"]
+from pathlib import Path
 
-# 模型列表
+BASE_DIR = Path(__file__).resolve().parent
+
+# ------------------------------- 身份 -------------------------------
+# AI 的名字（同时用于提示词和提示语）
+AI_NAME = "tomato"
+
+# ------------------------------- 群与权限 -------------------------------
+# 允许机器人工作的群号（字符串形式，必须是字符串）
+ALLOW_GROUPS = {"893"}
+
+# 管理员请在 `.env` 的 SUPERUSERS 里配置（NoneBot2 原生配置）。
+# 群主/群管理员会自动获得群级指令权限（开关水群、清空记忆等）。
+
+# ------------------------------- 模型 -------------------------------
+# 模型源：key 为源名称，value 为 ollama 地址与候选模型
 MODELS = {
     "local": {
         "label": "本地",
+        "url": "http://localhost:11434",  # ollama 服务地址
         "model": ["llama3.1:latest"],
-        "url": "http://localhost:11434", # 填写ollama AI的url
-    }
+    },
 }
 
-# AI的名称
-AI_NAME = "tomato"
+# 默认使用的模型源 / 模型下标
+DEFAULT_SOURCE = "local"
+DEFAULT_MODEL_INDEX = 0
 
-# 自动水群默认水群概率3%(1-0.97)
-SEND_PROBABILITIES = 0.97
+# ------------------------------- 生成参数 -------------------------------
+GLOBAL_CTX = 8192          # 上下文长度
+REPEAT_PENALTY = 1.55      # 不重复率（越高越不重复）
+PREDICT = 128              # 最多生成的 token 数
+TEMPERATURE = 0.85         # 越大感情越丰富
+TOP_K = 70                 # k 越大答案越百花齐放
+TOP_P = 0.975              # p 越大答案越百花齐放
+REQUEST_TIMEOUT = 120.0    # 单次生成超时（秒）；本地小模型可能较慢
 
-# 发表情包的概率
-SEND_IMAGE_PROBABILITIES = 0.55
+# ------------------------------- 行为概率 -------------------------------
+# 自动水群时“开口说话”的概率（旧版用 1-p 表示，这里直接用真实概率，默认 3%）
+DEFAULT_WATER_PROBABILITY = 0.03
+# 回复附带一张情绪表情包的概率
+SEND_IMAGE_PROBABILITY = 0.55
+# 回复时带上“引用回复”的概率
+REPLY_PROBABILITY = 0.5
+# 普通群成员允许设置的最大水群概率
+NORMAL_USER_MAX_WATER_PROBABILITY = 0.125
 
-# 情绪图片目录
-EMOTION_PIC_PATH = "resources/emotions"
+# ------------------------------- 记忆 -------------------------------
+MAX_MEMORY = 12            # 每个群最多保留的记忆条数
+MERGE_MAX_LEN = 128        # 未回复的连续消息合并时，单条内容的最大长度
 
-# 脑容量
-MAX_MEMORY = 12
+# ------------------------------- 表情包 -------------------------------
+EMOTION_PIC_PATH = BASE_DIR / "resources" / "emotions"
+# 允许的情绪（与 resources/emotions 下的文件夹名一致）
+EMOTIONS = (
+    "angry",
+    "confusion",
+    "disgusted",
+    "fear",
+    "happy",
+    "calm",
+    "sad",
+    "suki",
+    "curious",
+    "surprised",
+    "other",
+)
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+IMAGE_MAX_BYTES = 8 * 1024 * 1024  # 超过这个大小的图不发，避免 QQ 拒收
 
-# 最大内容
-GLOBAL_CTX = 8192
-# 不重复率(越高越不重复)
-REPEAT_PENALTY = 1.55
-# 预测文本段
-PREDICT = 128
-# 回复是否具有感情(越大感情越丰富)
-TEMPERATURE = 0.85
+# ------------------------------- 指令与提示 -------------------------------
+# 指令前缀（与旧版保持一致，支持 “ychat”“y chat”“!chat”“tomato chat”“/chat”）
+COMMAND_PREFIXES = ("y", "!", "！", "tomato", "/")
 
-# k,p越大给的答案越百花齐放
-TOP = [70, 0.975] # k, p
+# 已注册的指令名
+COMMANDS = {"chat", "chatsys", "chatcls", "chatstart", "chatstop", "chatset"}
 
-# BOT参数
-NICKNAME = {'偷妈头', 'tomato'}
-COMMAND_START = {'y', '!', '！', 'tomato', '/'}
-
-DEBUG = False
-SESSION_EXPIRE_TIMEOUT = timedelta(minutes=2)
-# 服务器和端口
-HOST = '0.0.0.0'
-PORT = 8765
-SESSION_EXPIRE_TIMEOUT = timedelta(minutes=1)
-SESSION_RUNNING_EXPRESSION = ''
-SESSION_RUN_TIMEOUT = timedelta(seconds=1200)
+# 回复长度超过这个值时，往记忆里塞一条“缩短”提示
+RESP_LEN_LIMIT = 75
+# 每句话结尾必须带的口癖
+KEYWORDS = ("喵",)

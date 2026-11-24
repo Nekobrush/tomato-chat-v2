@@ -1,2 +1,15 @@
 **/__pycache__
 resources/emotions/*/*
+
+# Python 虚拟环境
+.venv/
+venv/
+
+# 本地运行配置（含密钥/管理员QQ，不入库）
+.env
+.env.local
+
+# 测试与工具缓存
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
