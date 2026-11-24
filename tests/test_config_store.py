@@ -1,0 +1,139 @@
+"""``webui.config_store``：字段校验、保存与覆盖文件回读。"""
+
+from __future__ import annotations
+
+import copy
+import json
+
+import pytest
+
+import bot_config as cfg
+from webui import config_store
+
+KEYS = [field["key"] for field in config_store.FIELDS]
+
+
+@pytest.fixture
+def sandbox(tmp_path, monkeypatch):
+    """把覆盖文件写到临时目录，并在测试结束后恢复全局配置。"""
+    saved = {key: copy.deepcopy(getattr(cfg, key)) for key in KEYS}
+    monkeypatch.setattr(cfg, "BASE_DIR", tmp_path)
+    monkeypatch.setattr(cfg, "_WEBUI_OVERLAY", tmp_path / config_store.OVERLAY_NAME)
+    try:
+        yield tmp_path
+    finally:
+        for key, value in saved.items():
+            setattr(cfg, key, value)
+
+
+def test_effective_exposes_every_field(sandbox):
+    values = config_store.effective()
+
+    assert set(values) == set(KEYS)
+    assert values["ALLOW_GROUPS"] == sorted(values["ALLOW_GROUPS"])
+    assert isinstance(values["MODELS"], dict)
+    # 必须能直接 JSON 序列化（接口会原样返回给前端）
+    json.dumps(values)
+
+
+def test_save_writes_overlay_and_applies_values(sandbox):
+    merged, restart = config_store.save(
+        {"TEMPERATURE": 0.5, "ALLOW_GROUPS": ["893", "123456"], "MAX_MEMORY": 8}
+    )
+
+    assert cfg.TEMPERATURE == 0.5
+    assert cfg.ALLOW_GROUPS == {"893", "123456"}
+    assert cfg.MAX_MEMORY == 8
+    assert restart == []
+
+    overlay = json.loads((sandbox / config_store.OVERLAY_NAME).read_text(encoding="utf-8"))
+    assert overlay["TEMPERATURE"] == 0.5
+    assert overlay["ALLOW_GROUPS"] == ["123456", "893"]
+    assert merged["MAX_MEMORY"] == 8
+
+
+def test_ai_name_change_requires_restart(sandbox):
+    _, restart = config_store.save({"AI_NAME": "mikan"})
+
+    assert cfg.AI_NAME == "mikan"
+    assert restart == ["AI_NAME"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"TEMPERATURE": 5},
+        {"TOP_P": -0.1},
+        {"MAX_MEMORY": 1.5},
+        {"ALLOW_GROUPS": ["abc"]},
+        {"DEFAULT_SOURCE": "not-exist"},
+        {"AI_NAME": "   "},
+    ],
+)
+def test_save_rejects_bad_values(sandbox, payload):
+    with pytest.raises(config_store.ConfigError):
+        config_store.save(payload)
+
+
+def test_models_need_url_and_known_type(sandbox):
+    with pytest.raises(config_store.ConfigError):
+        config_store.save({"MODELS": {"remote": {"type": "openai"}}})
+
+    with pytest.raises(config_store.ConfigError):
+        config_store.save({"MODELS": {"remote": {"type": "unknown", "url": "http://x"}}})
+
+    with pytest.raises(config_store.ConfigError):
+        config_store.save({"MODELS": {"bad name": {"url": "http://x"}}})
+
+
+def test_models_keep_alias_type_and_index_is_clamped(sandbox):
+    merged, _ = config_store.save(
+        {
+            "MODELS": {"remote": {"type": "lmstudio", "url": "http://127.0.0.1:1234", "model": ["a", "b"]}},
+            "DEFAULT_SOURCE": "remote",
+            "DEFAULT_MODEL_INDEX": 99,
+        }
+    )
+
+    assert merged["MODELS"]["remote"]["type"] == "lmstudio"
+    assert merged["DEFAULT_MODEL_INDEX"] == 1
+
+
+def test_groups_are_deduplicated(sandbox):
+    merged, _ = config_store.save({"ALLOW_GROUPS": ["111", "111", "222"]})
+    assert merged["ALLOW_GROUPS"] == ["111", "222"]
+
+
+def test_overlay_file_overrides_defaults(sandbox):
+    overlay = sandbox / config_store.OVERLAY_NAME
+    overlay.write_text(
+        json.dumps(
+            {
+                "AI_NAME": "overlay-cat",
+                "ALLOW_GROUPS": ["777"],
+                "MAX_MEMORY": 5,
+                "MODELS": {"remote": {"type": "openai", "url": "http://host:1"}},
+                "DEFAULT_SOURCE": "remote",
+                "DEFAULT_MODEL_INDEX": 0,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    cfg._apply_webui_overlay()
+
+    assert cfg.AI_NAME == "overlay-cat"
+    assert cfg.ALLOW_GROUPS == {"777"}
+    assert cfg.MAX_MEMORY == 5
+    assert cfg.DEFAULT_SOURCE == "remote"
+    assert cfg.MODELS["remote"]["url"] == "http://host:1"
+
+
+def test_broken_overlay_is_ignored(sandbox):
+    (sandbox / config_store.OVERLAY_NAME).write_text("{not json", encoding="utf-8")
+    before = cfg.AI_NAME
+
+    cfg._apply_webui_overlay()
+
+    assert cfg.AI_NAME == before

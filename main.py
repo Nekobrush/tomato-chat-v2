@@ -2,6 +2,11 @@
 
 用法：
     .venv\\Scripts\\python.exe main.py
+    或者双击 start.bat（推荐，会打开网页控制台）
+
+启动后：
+    - WebUI           http://127.0.0.1:8765/webui/
+    - OneBot 反向 WS  ws://127.0.0.1:8765/onebot/v11/ws
 """
 
 from __future__ import annotations
@@ -23,6 +28,17 @@ def main() -> None:
     nonebot.init()
     nonebot.get_driver().register_adapter(Adapter)
     nonebot.load_plugins(str(ROOT / "bot_plugins"))
+
+    # WebUI 挂在 NoneBot 的 FastAPI 应用上，与 OneBot WS 共用 8765 端口
+    app = getattr(nonebot.get_driver(), "server_app", None)
+    if app is not None:
+        from webui import setup as setup_webui
+
+        setup_webui(app)
+        from nonebot.log import logger
+
+        logger.info("WebUI: http://127.0.0.1:8765/webui/")
+
     nonebot.run()
 
 

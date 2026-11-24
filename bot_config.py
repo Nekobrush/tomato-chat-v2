@@ -114,3 +114,72 @@ COMMANDS = {"chat", "chatsys", "chatcls", "chatstart", "chatstop", "chatset"}
 RESP_LEN_LIMIT = 75
 # 每句话结尾必须带的口癖
 KEYWORDS = ("喵",)
+
+
+# ------------------------------- WebUI 覆盖 -------------------------------
+# 网页控制台保存设置时会写这个文件；存在时用它覆盖上面的同名配置，
+# 这样既不用改 Python 源码，也不用把配置写进 .env。
+# 删掉 webui_config.json 就回到本文件的默认值。
+import json  # noqa: E402  (放在最后，避免打乱上面的配置阅读顺序)
+
+_WEBUI_OVERLAY = BASE_DIR / "webui_config.json"
+
+_OVERLAY_SCALARS = {
+    "AI_NAME": str,
+    "DEFAULT_SOURCE": str,
+    "DEFAULT_MODEL_INDEX": int,
+    "GLOBAL_CTX": int,
+    "REPEAT_PENALTY": float,
+    "PREDICT": int,
+    "TEMPERATURE": float,
+    "TOP_K": int,
+    "TOP_P": float,
+    "REQUEST_TIMEOUT": float,
+    "DEFAULT_WATER_PROBABILITY": float,
+    "SEND_IMAGE_PROBABILITY": float,
+    "REPLY_PROBABILITY": float,
+    "NORMAL_USER_MAX_WATER_PROBABILITY": float,
+    "MAX_MEMORY": int,
+    "MERGE_MAX_LEN": int,
+    "RESP_LEN_LIMIT": int,
+}
+
+
+def _apply_webui_overlay() -> None:
+    """读取 webui_config.json 覆盖默认配置；文件损坏时保持默认值。"""
+    if not _WEBUI_OVERLAY.exists():
+        return
+    try:
+        data = json.loads(_WEBUI_OVERLAY.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict):
+        return
+
+    for key, cast in _OVERLAY_SCALARS.items():
+        if key not in data:
+            continue
+        try:
+            globals()[key] = cast(data[key])
+        except (TypeError, ValueError):
+            continue
+
+    groups = data.get("ALLOW_GROUPS")
+    if isinstance(groups, list):
+        globals()["ALLOW_GROUPS"] = {str(gid) for gid in groups if str(gid).strip()}
+
+    models = data.get("MODELS")
+    if isinstance(models, dict) and models:
+        cleaned = {
+            str(name): dict(spec)
+            for name, spec in models.items()
+            if isinstance(spec, dict) and spec.get("url")
+        }
+        if cleaned:
+            globals()["MODELS"] = cleaned
+
+    if DEFAULT_SOURCE not in MODELS:
+        globals()["DEFAULT_SOURCE"] = next(iter(MODELS))
+
+
+_apply_webui_overlay()

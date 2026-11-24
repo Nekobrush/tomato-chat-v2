@@ -103,6 +103,24 @@ class LLMService:
                 logger.debug(f"关闭模型源 {name} 失败：{exc}")
         self._providers.clear()
 
+    def refresh_params(self) -> None:
+        """重新读取生成参数，让网页里改的数值立即生效。"""
+        self.params = GenerationParams.from_config()
+        for provider in self._providers.values():
+            provider.params = self.params
+
+    async def reload(self) -> None:
+        """配置（MODELS / 默认源）被网页改写后重建 provider 与当前选择。"""
+        await self.aclose()
+        self._sources = None  # 单例重新跟随 cfg.MODELS
+        available = self.sources
+        default = cfg.DEFAULT_SOURCE
+        self.source = default if default in available else next(iter(available), "")
+        self.index = cfg.DEFAULT_MODEL_INDEX
+        self.refresh_params()
+        self._clamp_index()
+        logger.info(f"模型配置已重载：{self.source}（{self.label}）")
+
     # ------------------------------------------------------------------ 切换
     def switch_source(self, source: str) -> None:
         if source not in self.sources:

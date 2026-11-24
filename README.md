@@ -12,6 +12,8 @@
 - **模型管理**：支持两类模型源——ollama 原生协议，以及 OpenAI 兼容 API（LM Studio、DeepSeek、OneAPI 等）；可多源、多模型热切换，可从当前源同步模型列表。
 - **群级开关**：按群开启/关闭对话与自动聊天，支持群白名单。
 - **权限分级**：超级管理员（`.env` 的 `SUPERUSERS`）、群主/群管理员、普通成员三级权限。
+- **网页控制台**：内置 WebUI，在浏览器里看状态、改配置、调群开关、查记忆、试聊、看日志，改动即时生效。
+- **一键启动**：双击 `start.bat`（或 `python launcher.py`）自动准备虚拟环境、装依赖、启动机器人并打开网页。
 
 ## 环境要求
 
@@ -37,6 +39,31 @@ pip install -r requirements.txt
 # 需要跑测试时再装
 pip install -r requirements-dev.txt
 ```
+
+不想手动敲命令的话，直接用下面的「一键启动」，它会自动完成上面这些步骤。
+
+## 一键启动
+
+**Windows**：双击项目根目录的 `start.bat`。
+
+**任何系统**：
+
+```bash
+python launcher.py                 # 准备虚拟环境 → 装依赖 → 启动 → 自动打开 WebUI
+python launcher.py --no-browser    # 不自动打开浏览器
+python launcher.py --reinstall     # 强制重装依赖
+python launcher.py --port 9000     # 临时换端口
+```
+
+启动器会：
+
+1. 没有 `.venv` 就用当前 Python 创建一个；
+2. 按 `requirements.txt` 的内容哈希判断要不要 `pip install`（改过依赖才会重装）；
+3. 启动 `main.py`，轮询 `/api/health` 等待就绪；
+4. 自动打开 `http://127.0.0.1:8765/webui/`；
+5. 按 `Ctrl+C` 时一并停掉机器人进程。
+
+如果端口上已经有服务在跑，它会直接打开网页，不会再起一个进程。
 
 ## 配置
 
@@ -161,6 +188,44 @@ ws://127.0.0.1:8765/onebot/v11/ws
 
 > 用 HTTP 直接访问该地址会返回 404，这是正常的——它是 WebSocket 专用路由。
 
+## 网页控制台（WebUI）
+
+WebUI 内嵌在机器人自己的 FastAPI 应用里，和 OneBot 反向 WS 共用 `8765` 端口，**不需要额外启动一个服务**。启动后打开：
+
+```
+http://127.0.0.1:8765/webui/
+```
+
+页面里的六个标签页：
+
+| 标签 | 能做什么 |
+| --- | --- |
+| 概览 | 在线状态、当前模型源/模型、群数、记忆总数、表情包数量；切换模型源/模型、同步模型列表 |
+| 群聊 | 添加/移除白名单群，开关本群对话与自动聊天，拖动水群概率滑杆 |
+| 设置 | 编辑模型源（地址、API Key、模型列表、`extra_body`）、生成参数、行为概率、AI 名字、记忆条数、群号白名单 |
+| 记忆 | 查看任意群（含网页试聊）的记忆内容与角色，清空记忆 |
+| 试聊 | 不经过 QQ、单独和猫娘对话，用 `webui-test` 独立记忆，不影响群聊 |
+| 日志 | 查看 `logs/bot.log` 最近 300 行，WARNING/ERROR 高亮，可自动刷新 |
+
+### 配置存在哪里
+
+网页上保存的设置写到项目根目录的 **`webui_config.json`**，`bot_config.py` 在导入时会读它并覆盖同名默认值，所以重启后依然生效，也不用改 Python 源码。
+
+- 删掉 `webui_config.json` 就回到 `bot_config.py` 里的默认值；
+- 群开关、水群概率这类运行期状态只存在内存里，重启后回到默认；
+- 改 `AI_NAME` 会提示「需要重启」，因为人设提示词只在启动时构建。
+
+### 远程访问
+
+默认只允许本机（`127.0.0.1` / `localhost`）访问。想从别的机器打开，先设置环境变量再启动：
+
+```powershell
+$env:WEBUI_TOKEN = "换成一个长一点的随机串"
+python main.py
+```
+
+然后访问时带上令牌：网页首次请求会弹窗要你输入（保存在浏览器 localStorage），或者直接 `http://<ip>:8765/webui/?token=...`。
+
 ## 接入 QQ
 
 在机器人框架里新增一个**反向 WebSocket** 连接，地址填上面的 `ws://…/onebot/v11/ws`；若 `.env` 里设置了 `ONEBOT_ACCESS_TOKEN`，在框架侧填同一个 token。连接成功后，把机器人拉进群，发 `tomato chat 你好` 或 `@机器人 你好` 即可。
@@ -189,8 +254,11 @@ ws://127.0.0.1:8765/onebot/v11/ws
 
 ```
 tomato-chat/
-├── main.py                     # 入口：初始化 NoneBot、注册适配器、加载插件
+├── main.py                     # 入口：初始化 NoneBot、注册适配器、加载插件、挂载 WebUI
+├── launcher.py                 # 一键启动：准备环境 → 启动 → 打开网页
+├── start.bat                   # Windows 双击启动
 ├── bot_config.py               # 业务配置
+├── webui_config.json           # 网页保存的覆盖配置（删除即回默认，自动生成）
 ├── .env / .env.example         # NoneBot 原生配置
 ├── requirements.txt
 ├── bot_plugins/
@@ -209,6 +277,12 @@ tomato-chat/
 │       │   ├── ollama.py       #   ollama 原生协议
 │       │   └── openai.py       #   OpenAI 兼容协议
 │       └── pipeline.py         # 生成流程：记忆 → 模型 → 表情包 → 消息
+├── webui/                      # 网页控制台（挂在 NoneBot 的 FastAPI 上）
+│   ├── __init__.py             # setup(app)：路由、静态页面、日志文件
+│   ├── api.py                  # /api/* 接口
+│   ├── config_store.py         # 配置校验、保存与 webui_config.json
+│   └── static/                 # index.html / style.css / app.js
+├── logs/bot.log                # 运行时日志（自动生成）
 ├── resources/emotions/         # 表情包
 └── tests/                      # pytest 测试
 ```
@@ -219,7 +293,7 @@ tomato-chat/
 pytest -q
 ```
 
-当前 111 个用例全部通过，覆盖指令解析、记忆裁剪/合并、模型切换与同步、两种模型后端的请求/错误处理、生成流程和插件冒烟。
+当前 140 个用例全部通过，覆盖指令解析、记忆裁剪/合并、模型切换与同步、两种模型后端的请求/错误处理、生成流程、WebUI 的配置校验与接口，以及插件冒烟。
 
 ## 迁移说明（NoneBot1 → NoneBot2）
 
