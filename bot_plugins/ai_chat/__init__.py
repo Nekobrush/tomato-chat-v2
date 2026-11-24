@@ -29,7 +29,7 @@ import bot_config as cfg
 from . import pipeline
 from .commands import USAGE_TEXT, handle_command
 from .model import llm
-from .runtime import STATES, GroupState, state as _state
+from .runtime import STATES, GroupState, nickname, state as _state
 from .text import parse_command, segments_to_text
 
 __plugin_meta__ = PluginMetadata(
@@ -83,17 +83,22 @@ async def handle_group_message(bot: Bot, event: GroupMessageEvent) -> None:
         return
 
     # 延迟 import：messaging 依赖 pipeline 与本模块用到的单例，避免循环
-    from .messaging import chat_and_reply, record_only
+    from .messaging import chat_and_reply, merge_pending
+
+    # 先按事件时间记录，再排队生成：本地生成一次要几秒，晚记录会把时间线压平
+    occurred_at = int(event.time) * 1000 if event.time else None
+    pipeline.remember_user(group_id, nickname(event), event.user_id, text, occurred_at)
 
     if event.is_tome():
         async with pipeline.group_lock(group_id):
             await chat_and_reply(bot, event, text)
         return
 
+    if not state.water_enabled or random_float() > state.water_probability:
+        merge_pending(group_id)
+        return
+
     async with pipeline.group_lock(group_id):
-        if not state.water_enabled or random_float() > state.water_probability:
-            await record_only(group_id, event, text)
-            return
         await chat_and_reply(bot, event, text, silent=True)
 
 

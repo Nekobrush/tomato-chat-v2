@@ -15,7 +15,7 @@ from . import pipeline
 from .errors import LLMError
 from .messaging import chat_and_reply, reply_text
 from .model import llm
-from .runtime import GroupState, can_manage, is_superuser, state as get_state
+from .runtime import GroupState, can_manage, is_superuser, nickname, state as get_state
 from .text import parse_command
 
 USAGE_TEXT = "\n".join(
@@ -75,7 +75,10 @@ async def _cmd_chat(
             f"想聊什么呢喵？可以这样：{ cfg.COMMAND_PREFIXES[0] } chat 你好喵",
         )
         return
-    async with pipeline.group_lock(str(event.group_id)):
+    group_id = str(event.group_id)
+    occurred_at = int(event.time) * 1000 if event.time else None
+    pipeline.remember_user(group_id, nickname(event), event.user_id, text, occurred_at)
+    async with pipeline.group_lock(group_id):
         await chat_and_reply(bot, event, text)
 
 

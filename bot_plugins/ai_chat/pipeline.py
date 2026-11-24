@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +14,7 @@ from nonebot.adapters.onebot.v11 import Message, MessageSegment
 import bot_config as cfg
 
 from .model import llm
-from .memory import DEFAULT_MARK, PERSISTENCE_MARK, MemoryStore
+from .memory import DEFAULT_MARK, PERSISTENCE_MARK, TIP_MARK, MemoryStore
 from .prompts import REQFAIL_TIPS, SYSTEM_MESSAGES, TIPS_NO_EMOTION, TIPS_NO_MEOW, TIPS_TOO_LONG
 from .text import collapse_whitespace, extract_emotions, remove_emojis
 
@@ -22,6 +23,13 @@ store = MemoryStore(cfg.MAX_MEMORY)
 _locks: dict[str, asyncio.Lock] = {}
 
 _IMAGE_CACHE: dict[str, list[Path]] = {}
+
+# 最近几条用户消息保留完整时间戳前缀，更早的剥掉以压缩 prompt（本地 prefill 是真花钱）
+KEEP_PREFIX_RECORDS = 2
+
+_TIMESTAMP_PREFIX = re.compile(r"^\[\d{10,16}\]")
+
+_SENTENCE_ENDINGS = "。！？!?…；;，,、"
 
 
 def group_lock(group_id: str) -> asyncio.Lock:
@@ -37,14 +45,30 @@ def group_lock(group_id: str) -> asyncio.Lock:
 # 记忆写入
 # ---------------------------------------------------------------------------
 
-def format_user_message(nickname: str, user_id: int | str, text: str) -> str:
-    """用户消息统一格式：[毫秒时间戳]昵称(QQ号):\\n内容。"""
-    timestamp = int(time.time() * 1000)
+def format_user_message(
+    nickname: str,
+    user_id: int | str,
+    text: str,
+    occurred_at: int | None = None,
+) -> str:
+    """用户消息统一格式：[毫秒时间戳]昵称(QQ号):\\n内容。
+
+    `occurred_at` 用事件的真实发生时间，而不是"轮到处理它的时间"——
+    本地生成一次要好几秒，用处理时间会把对话时间线压平。
+    """
+    timestamp = int(occurred_at) if occurred_at is not None else int(time.time() * 1000)
     return f"[{timestamp}]{nickname}({user_id}):\n{text}"
 
 
-def remember_user(group_id: str, nickname: str, user_id: int | str, text: str) -> None:
-    store.append(group_id, "user", format_user_message(nickname, user_id, text))
+def remember_user(
+    group_id: str,
+    nickname: str,
+    user_id: int | str,
+    text: str,
+    occurred_at: int | None = None,
+) -> None:
+    """记录用户消息。应在取群锁之前调用，让没抢到锁的消息也能按真实顺序落库。"""
+    store.append(group_id, "user", format_user_message(nickname, user_id, text, occurred_at))
 
 
 def merge_pending_user(group_id: str) -> bool:
@@ -81,23 +105,64 @@ def system_context(bot_id: int | str) -> dict[str, str]:
     return {"role": "system", "content": content}
 
 
+def _strip_timestamp(content: str) -> str:
+    return _TIMESTAMP_PREFIX.sub("", content, count=1)
+
+
 def build_messages(group_id: str, bot_id: int | str) -> list[dict[str, str]]:
-    """组装请求消息。
+    """组装请求消息，**让前缀尽量稳定**。
 
-    只保留**一条**开头的 system 消息：部分 OpenAI 兼容服务（如 LM Studio 的 Qwen
-    模板）会拒绝出现在对话中间的 system，`chatsys` 追加的设定也因此统一提到开头。
+    本地推理的 prefill 是实打实的等待时间，而 llama.cpp / LM Studio 只会在
+    请求前缀完全一致时复用 KV cache。所以：
+
+    - 第 0 条 system 只放人设与 `chatsys` 的持久化设定（很少变）；
+    - few-shot 紧随其后（永不变）；
+    - 历史消息只追加不改写（只剥掉旧消息的时间戳，属于一次性改写）；
+    - 时间、纠错提示这些每轮都变的东西，全部塞到最后一条 user 消息末尾。
+
+    这样缓存命中的是「人设 + few-shot + 历史」，每轮只需 prefill 新增的那一两条。
     """
-    history = store.messages(group_id)
+    records = store.records(group_id)
 
-    system_parts = [SYSTEM_MESSAGES[0]["content"]]
-    system_parts.extend(
-        record["content"] for record in history if record["role"] == "system"
-    )
-    system_parts.append(system_context(bot_id)["content"])
+    persistent_system = [
+        record.content
+        for record in records
+        if record.role == "system" and record.mark == PERSISTENCE_MARK
+    ]
+    volatile_system = [
+        record.content
+        for record in records
+        if record.role == "system"
+        and record.mark not in {PERSISTENCE_MARK, TIP_MARK}
+    ]
+    # 纠错提示只保留最新一条：堆多了既占 prompt，又会互相矛盾
+    tips = [record.content for record in records if record.mark == TIP_MARK]
+    if tips:
+        volatile_system.append(tips[-1])
+    dialog = [record for record in records if record.role != "system"]
 
-    messages: list[dict[str, str]] = [{"role": "system", "content": "\n\n".join(system_parts)}]
+    system_parts = [SYSTEM_MESSAGES[0]["content"], *persistent_system]
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": "\n\n".join(part for part in system_parts if part)}
+    ]
     messages.extend(SYSTEM_MESSAGES[1:])
-    messages.extend(record for record in history if record["role"] != "system")
+
+    verbatim_from = max(len(dialog) - KEEP_PREFIX_RECORDS, 0)
+    for offset, record in enumerate(dialog):
+        content = record.content
+        if record.role == "user" and offset < verbatim_from:
+            content = _strip_timestamp(content)
+        messages.append({"role": record.role, "content": content})
+
+    tail_parts = [system_context(bot_id)["content"], *volatile_system]
+    tail = "\n".join(part for part in tail_parts if part)
+    if messages[-1]["role"] == "user":
+        messages[-1] = {
+            "role": "user",
+            "content": f"{messages[-1]['content']}\n\n{tail}",
+        }
+    else:
+        messages.append({"role": "user", "content": tail})
     return messages
 
 
@@ -150,6 +215,22 @@ def _needs_meow(text: str) -> bool:
     return not trimmed.endswith(cfg.KEYWORDS)
 
 
+def _fit_length(text: str) -> str:
+    """超长时在标点处截断，而不是让它写满 PREDICT 个 token。
+
+    本地每多生成一个 token 都要多等，而且长回复大概率会被 post-processing 裁掉，
+    不如在生成阶段就尽量短。
+    """
+    limit = cfg.RESP_LEN_LIMIT
+    if len(text) <= limit:
+        return text
+    window = text[:limit]
+    cut = max(window.rfind(char) for char in _SENTENCE_ENDINGS)
+    if cut < limit // 2:
+        return window.rstrip()
+    return window[:cut].rstrip()
+
+
 def collect_tips(text: str, emotions: list[str]) -> str:
     tips: list[str] = []
     if not emotions:
@@ -190,11 +271,26 @@ async def generate_reply(group_id: str, bot_id: int | str, reply_id: int | None 
     emotions, cleaned = extract_emotions(without_emoji)
     cleaned = collapse_whitespace(cleaned)
 
+    # 先按生成时的长度判断，再截断：截断是补救，纠错提示仍然要留给下一轮
+    too_long = len(cleaned) > cfg.RESP_LEN_LIMIT
+    missing_meow = bool(cleaned) and _needs_meow(cleaned)
+
+    cleaned = _fit_length(cleaned)
+    # 缺「喵」是格式问题，就地补一个，不为它再生成一次（本地重试=延迟翻倍）
+    if missing_meow:
+        cleaned += "喵"
+
     # 记忆里保留带情绪标记的原文，方便模型学习格式
     store.append(group_id, "assistant", collapse_whitespace(without_emoji))
 
-    tips = collect_tips(cleaned, emotions)
+    tips: list[str] = []
+    if not emotions:
+        tips.append(TIPS_NO_EMOTION)
+    if too_long:
+        tips.append(TIPS_TOO_LONG)
+    if missing_meow:
+        tips.append(TIPS_NO_MEOW)
     if tips:
-        store.append(group_id, "system", tips)
+        store.append(group_id, "system", "\n".join(tips), mark=TIP_MARK)
 
     return compose_message(cleaned, emotions, reply_id)

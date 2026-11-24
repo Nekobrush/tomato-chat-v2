@@ -7,7 +7,6 @@ from nonebot.log import logger
 
 from . import pipeline
 from .errors import LLMError
-from .runtime import nickname
 
 
 async def send(bot: Bot, event: GroupMessageEvent, message: Message | str) -> None:
@@ -27,9 +26,12 @@ async def chat_and_reply(
     *,
     silent: bool = False,
 ) -> None:
-    """记录用户消息 → 调模型 → 发送（调用方需持有该群的锁）。"""
+    """调模型 → 发送（调用方需持有该群的锁）。
+
+    用户消息已经由调用方在取锁之前记入记忆，这里只负责生成与发送，
+    这样排队的消息也能保留真实的先后与时间戳。
+    """
     group_id = str(event.group_id)
-    pipeline.remember_user(group_id, nickname(event), event.user_id, text)
     try:
         message = await pipeline.generate_reply(
             group_id,
@@ -44,7 +46,6 @@ async def chat_and_reply(
     await send(bot, event, message)
 
 
-async def record_only(group_id: str, event: GroupMessageEvent, text: str) -> None:
-    """不回复，只记录上下文，并合并上一条未回复的用户消息。"""
-    pipeline.remember_user(group_id, nickname(event), event.user_id, text)
+def merge_pending(group_id: str) -> None:
+    """没抢到发言时，把刚记录的用户消息并入上一条未回复的消息。"""
     pipeline.merge_pending_user(group_id)

@@ -91,7 +91,9 @@ python launcher.py --port 9000     # 临时换端口
 | `ALLOW_GROUPS` | 允许工作的群号集合，**必须把群号写进来**；留空则机器人不理会任何群 |
 | `MODELS` | 模型源表，每项支持 `type`（`ollama` / `openai`）、`label`、`url`、`api_key`、`model`、`extra_body` |
 | `DEFAULT_SOURCE` / `DEFAULT_MODEL_INDEX` | 默认模型源与默认模型下标 |
-| `GLOBAL_CTX` / `PREDICT` / `TEMPERATURE` / `TOP_K` / `TOP_P` / `REPEAT_PENALTY` | 生成参数 |
+| `GLOBAL_CTX` / `PREDICT` / `TEMPERATURE` / `TOP_K` / `TOP_P` / `REPEAT_PENALTY` | 生成参数；`GLOBAL_CTX`/`TOP_K`/`REPEAT_PENALTY` 只对 ollama 直接生效，OpenAI 兼容源需在模型源里开启 `send_sampling` 或写进 `extra_body` |
+| `STOP_SEQUENCES` | 解码停止串，默认 `("\n",)`：提示词要求单行、结尾一个情绪标记，遇到换行就停能少生成不少 token |
+| `LOG_USAGE` | 每次调用后打印 `prompt/completion/耗时/tok/s`，方便本地对比优化效果 |
 | `MAX_MEMORY` | 每群记忆条数 |
 | `DEFAULT_WATER_PROBABILITY` | 自动聊天时被概率（0.03 表示约 3% 的消息会接话） |
 | `SEND_IMAGE_PROBABILITY` | 回复附带表情包的概率 |
@@ -298,7 +300,25 @@ tomato-chat/
 pytest -q
 ```
 
-当前 140 个用例全部通过，覆盖指令解析、记忆裁剪/合并、模型切换与同步、两种模型后端的请求/错误处理、生成流程、WebUI 的配置校验与接口，以及插件冒烟。
+当前 143 个用例全部通过，覆盖指令解析、记忆裁剪/合并、模型切换与同步、两种模型后端的请求/错误处理、生成流程、提示词前缀稳定性、WebUI 的配置校验与接口，以及插件冒烟。
+
+### 本地性能测量
+
+`tools/bench_prompt.py` 会对比「旧提示词组装」与「稳定前缀」两种方案的 prompt 长度和连续两轮的 prefill 耗时：
+
+```bash
+.\.venv\Scripts\python.exe tools\bench_prompt.py
+```
+
+在本机 `qwen3.5-9b@q6_k`（LM Studio）上的实测：
+
+| 指标 | 结果 |
+| --- | --- |
+| prompt 长度 | 旧 819 tok / 新 796 tok（差别不大，省的是缓存不是字数） |
+| 连续两轮 prefill | 旧 0.38s → 0.38s（时间戳一变就全量重算）；新 0.36s → 0.16s（命中前缀缓存） |
+| 生成速度 | 约 18–24 tok/s，所以**真正的大头是 decode**：70 token 的回复 ≈ 3s |
+
+结论：前缀缓存每轮省 0.2s 左右；想明显变快得靠「少生成」（`STOP_SEQUENCES`、`PREDICT`）和「别为格式问题重试」。
 
 ## 迁移说明（NoneBot1 → NoneBot2）
 
@@ -321,6 +341,7 @@ pytest -q
 - **新增 OpenAI 兼容后端**：自动补齐 `/v1`、支持 `api_key`（Bearer）、`extra_body` 透传；HTTP 错误会带上状态码与响应摘要，推理模型把 token 花在思考上时会给出可操作的提示。
 - **插件拆分**：`__init__.py` 只负责 matcher 接线与普通消息处理；指令分发、群状态/权限、发送流程分别落到 `commands.py`、`runtime.py`、`messaging.py`。
 - **提示词兼容性**：请求只保留一条开头的 `system` 消息，`chatsys` 追加的设定会合并进去；LM Studio 的 Qwen 模板会直接拒绝出现在对话中间的 `system`。
+- **本地推理优化**：第 0 条 `system` 只放人设与 `chatsys --p` 的持久化设定，时间戳与纠错提示挪到最后一条 user 消息尾部，让 llama.cpp 的 prefix cache 能命中；旧消息剥掉时间戳前缀压缩 prompt；用户消息在取锁之前就按事件时间记录，排队不会把时间线压平；缺「喵」就地补一个，不再为格式问题重新生成一次。
 - **向后兼容**：旧写法 `MODELS = {源名: {"url": ..., "model": [...]}}` 不带 `type` 时仍按 ollama 处理。
 - **测试**：从 75 个增加到 110 个，新增 `tests/test_providers.py`（用 `httpx.MockTransport` 验证请求体/鉴权头/错误映射，用假客户端验证 ollama 参数映射）。
 - 已在 LM Studio（`qwen3.5-9b@q6_k`）上做过真实联调：`chatset ss` 能同步模型列表，`chat` 能正常拿到回复。

@@ -12,6 +12,8 @@ import bot_config as cfg
 
 DEFAULT_MARK = "default"
 PERSISTENCE_MARK = "persistence"
+# 生成后追加的纠错提示：只对下一轮有意义，不需要每轮都堆在提示词里
+TIP_MARK = "tip"
 
 
 @dataclass

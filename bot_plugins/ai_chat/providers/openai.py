@@ -6,12 +6,13 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 import httpx
 
 from ..errors import LLMError
-from .base import ChatProvider, GenerationParams
+from .base import ChatProvider, GenerationParams, log_usage
 
 _V1_PATTERN = re.compile(r"/v1(?:/|$)")
 _NON_CHAT_PATTERN = re.compile(r"embed|rerank|bge-|text-similarity")
@@ -68,8 +69,13 @@ class OpenAICompatibleProvider(ChatProvider):
             "top_p": p.top_p,
             "max_tokens": p.max_tokens,
         }
+        if p.stop:
+            body["stop"] = list(p.stop)
         # 部分服务器（LM Studio 等）支持额外参数，允许在配置里透传
         body.update(self._extra_body)
+        if self.spec.get("send_sampling"):
+            body["top_k"] = p.top_k
+            body["repeat_penalty"] = p.repeat_penalty
         return body
 
     def _error(self, exc: httpx.HTTPStatusError) -> LLMError:
@@ -107,6 +113,7 @@ class OpenAICompatibleProvider(ChatProvider):
             "stream": False,
             **self.request_params,
         }
+        started = time.perf_counter()
         try:
             response = await self._client.post("chat/completions", json=payload)
             response.raise_for_status()
@@ -115,6 +122,15 @@ class OpenAICompatibleProvider(ChatProvider):
             raise self._error(exc) from exc
         except (httpx.HTTPError, ValueError) as exc:
             raise LLMError(f"调用模型 {model} 失败（OpenAI 兼容）：{exc}") from exc
+
+        usage = data.get("usage") or {}
+        log_usage(
+            self.label,
+            model,
+            prompt_tokens=usage.get("prompt_tokens"),
+            completion_tokens=usage.get("completion_tokens"),
+            elapsed=time.perf_counter() - started,
+        )
 
         choices = data.get("choices") or []
         if not choices:

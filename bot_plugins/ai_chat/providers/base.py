@@ -25,6 +25,7 @@ class GenerationParams:
     max_tokens: int = 128
     num_ctx: int = 8192
     repeat_penalty: float = 1.55
+    stop: tuple[str, ...] = ()
 
     @classmethod
     def from_config(cls) -> GenerationParams:
@@ -35,6 +36,7 @@ class GenerationParams:
             max_tokens=getattr(cfg, "PREDICT", cls.max_tokens),
             num_ctx=getattr(cfg, "GLOBAL_CTX", cls.num_ctx),
             repeat_penalty=getattr(cfg, "REPEAT_PENALTY", cls.repeat_penalty),
+            stop=tuple(getattr(cfg, "STOP_SEQUENCES", ()) or ()),
         )
 
 
@@ -88,3 +90,31 @@ class ChatProvider(ABC):
     async def aclose(self) -> None:
         """释放底层连接，默认什么都不做。"""
         return None
+
+
+def log_usage(
+    label: str,
+    model: str,
+    *,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+    elapsed: float,
+) -> None:
+    """打印一次调用的 token 用量与耗时。
+
+    本地部署里 prompt 长度直接决定首字延迟，所以这行日志是优化的依据：
+    前缀稳定后 prompt_tokens 应该从 900+ 掉到 200 左右。
+    """
+    if not getattr(cfg, "LOG_USAGE", True):
+        return
+    from nonebot.log import logger
+
+    prompt = "?" if prompt_tokens is None else str(prompt_tokens)
+    completion = "?" if completion_tokens is None else str(completion_tokens)
+    speed = ""
+    if completion_tokens and elapsed > 0:
+        speed = f"，{completion_tokens / elapsed:.1f} tok/s"
+    logger.info(
+        f"模型调用 {label}/{model} prompt={prompt} completion={completion} "
+        f"耗时={elapsed:.2f}s{speed}"
+    )

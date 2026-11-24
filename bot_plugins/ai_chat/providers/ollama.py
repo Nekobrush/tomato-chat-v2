@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import inspect
+import time
 from typing import Any
 
 from ollama import AsyncClient, Options
 
 from ..errors import LLMError
-from .base import ChatProvider, GenerationParams
+from .base import ChatProvider, GenerationParams, log_usage
 
 
 class OllamaProvider(ChatProvider):
@@ -29,7 +30,7 @@ class OllamaProvider(ChatProvider):
     @property
     def options(self) -> Options:
         p = self.params
-        return Options(
+        options = Options(
             num_ctx=p.num_ctx,
             repeat_penalty=p.repeat_penalty,
             num_predict=p.max_tokens,
@@ -37,6 +38,9 @@ class OllamaProvider(ChatProvider):
             top_k=p.top_k,
             top_p=p.top_p,
         )
+        if p.stop:
+            options["stop"] = list(p.stop)
+        return options
 
     async def list_models(self) -> list[str]:
         try:
@@ -54,6 +58,7 @@ class OllamaProvider(ChatProvider):
         return models
 
     async def chat(self, model: str, messages: list[dict[str, str]]) -> str:
+        started = time.perf_counter()
         try:
             response = await self._client.chat(
                 model=model,
@@ -62,6 +67,20 @@ class OllamaProvider(ChatProvider):
             )
         except Exception as exc:  # noqa: BLE001
             raise LLMError(f"调用模型 {model} 失败（ollama）：{exc}") from exc
+
+        elapsed = time.perf_counter() - started
+        prompt_tokens = getattr(response, "prompt_eval_count", None)
+        completion_tokens = getattr(response, "eval_count", None)
+        if isinstance(response, dict):
+            prompt_tokens = prompt_tokens or response.get("prompt_eval_count")
+            completion_tokens = completion_tokens or response.get("eval_count")
+        log_usage(
+            self.label,
+            model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            elapsed=elapsed,
+        )
 
         content = getattr(getattr(response, "message", None), "content", None)
         if content is None and isinstance(response, dict):
