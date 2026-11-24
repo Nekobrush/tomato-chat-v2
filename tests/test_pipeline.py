@@ -148,3 +148,34 @@ def test_system_context_uses_ms() -> None:
     assert context["role"] == "system"
     assert "毫秒级时间戳" in context["content"]
     assert "10000" in context["content"]
+
+
+def test_focus_hint_names_the_target() -> None:
+    hint = pipeline.focus_hint("小明", 123, "今天吃什么", 2)
+    assert "小明(123)" in hint
+    assert "这 2 条消息" in hint
+    assert "今天吃什么" in hint
+    assert "不要重复回应" in hint
+
+
+def test_build_messages_appends_focus_at_the_end() -> None:
+    """聚焦指令要压在最后：离生成越近，越不会被前面的历史带跑。"""
+    group_id = "test-focus"
+    pipeline.reset_group(group_id)
+    pipeline.remember_user(group_id, "小明", 123, "在吗")
+
+    messages = pipeline.build_messages(group_id, 10000, focus="FOCUS-指令-123")
+    assert messages[-1]["role"] == "user"
+    assert messages[-1]["content"].rstrip().endswith("FOCUS-指令-123")
+    # 前缀（system）不受影响，缓存仍然有效
+    assert "FOCUS" not in messages[0]["content"]
+
+
+def test_focus_does_not_change_prefix() -> None:
+    group_id = "test-focus-prefix"
+    pipeline.reset_group(group_id)
+    pipeline.remember_user(group_id, "小明", 123, "在吗")
+    plain = pipeline.build_messages(group_id, 10000)
+    focused = pipeline.build_messages(group_id, 10000, focus="FOCUS")
+    assert plain[:-1] == focused[:-1]
+

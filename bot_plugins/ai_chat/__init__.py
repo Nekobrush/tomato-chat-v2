@@ -84,14 +84,15 @@ async def handle_group_message(bot: Bot, event: GroupMessageEvent) -> None:
 
     # 延迟 import：messaging 依赖 pipeline 与本模块用到的单例，避免循环
     from .messaging import chat_and_reply, merge_pending
+    from .queue import enqueue
 
     # 先按事件时间记录，再排队生成：本地生成一次要几秒，晚记录会把时间线压平
     occurred_at = int(event.time) * 1000 if event.time else None
     pipeline.remember_user(group_id, nickname(event), event.user_id, text, occurred_at)
 
     if event.is_tome():
-        async with pipeline.group_lock(group_id):
-            await chat_and_reply(bot, event, text)
+        # 生成期间再 @ 的人不会各排一条：同一人合并、不同人按顺序排队
+        await enqueue(bot, event, text)
         return
 
     if not state.water_enabled or random_float() > state.water_probability:

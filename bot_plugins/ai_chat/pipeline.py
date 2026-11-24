@@ -94,6 +94,24 @@ def fail_tip() -> str:
     return random.choice(REQFAIL_TIPS)
 
 
+def focus_hint(nickname: str, user_id: int | str, text: str, count: int = 1) -> str:
+    """本轮该回应谁：点名 + 引述原话，把注意力钉在目标消息上。
+
+    群记忆是所有人共享的，模型每轮都能看到别人的话题；这句话负责告诉它
+    「现在轮到这个人的这条消息」，并且别重复回应前文或自己上一条说过的话。
+    """
+    quoted = text if len(text) <= 80 else text[:80] + "…"
+    who = f"{nickname}({user_id})"
+    if count > 1:
+        head = f"现在轮到回应 {who} 刚发的这 {count} 条消息："
+    else:
+        head = f"现在轮到回应 {who} 的这条消息："
+    return (
+        f"{head}\n{quoted}\n"
+        "其他人的话题前面已经回应过了，不要重复回应；也不要重复你上一条说过的话。"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 提示词组装
 # ---------------------------------------------------------------------------
@@ -109,7 +127,11 @@ def _strip_timestamp(content: str) -> str:
     return _TIMESTAMP_PREFIX.sub("", content, count=1)
 
 
-def build_messages(group_id: str, bot_id: int | str) -> list[dict[str, str]]:
+def build_messages(
+    group_id: str,
+    bot_id: int | str,
+    focus: str | None = None,
+) -> list[dict[str, str]]:
     """组装请求消息，**让前缀尽量稳定**。
 
     本地推理的 prefill 是实打实的等待时间，而 llama.cpp / LM Studio 只会在
@@ -155,6 +177,9 @@ def build_messages(group_id: str, bot_id: int | str) -> list[dict[str, str]]:
         messages.append({"role": record.role, "content": content})
 
     tail_parts = [system_context(bot_id)["content"], *volatile_system]
+    if focus:
+        # 聚焦指令放最后：离生成最近，锚定效果最强
+        tail_parts.append(focus)
     tail = "\n".join(part for part in tail_parts if part)
     if messages[-1]["role"] == "user":
         messages[-1] = {
@@ -262,9 +287,15 @@ def compose_message(text: str, emotions: list[str], reply_id: int | None) -> Mes
     return message
 
 
-async def generate_reply(group_id: str, bot_id: int | str, reply_id: int | None = None) -> Message:
+async def generate_reply(
+    group_id: str,
+    bot_id: int | str,
+    reply_id: int | None = None,
+    *,
+    focus: str | None = None,
+) -> Message:
     """调用模型并返回可直接发送的 Message。调用方必须持有该群的锁。"""
-    messages = build_messages(group_id, bot_id)
+    messages = build_messages(group_id, bot_id, focus=focus)
     raw = await llm.chat(messages)
 
     without_emoji = remove_emojis(raw)

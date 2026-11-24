@@ -13,8 +13,9 @@ import bot_config as cfg
 
 from . import pipeline
 from .errors import LLMError
-from .messaging import chat_and_reply, reply_text
+from .messaging import reply_text
 from .model import llm
+from .queue import enqueue
 from .runtime import GroupState, can_manage, is_superuser, nickname, state as get_state
 from .text import parse_command
 
@@ -78,8 +79,7 @@ async def _cmd_chat(
     group_id = str(event.group_id)
     occurred_at = int(event.time) * 1000 if event.time else None
     pipeline.remember_user(group_id, nickname(event), event.user_id, text, occurred_at)
-    async with pipeline.group_lock(group_id):
-        await chat_and_reply(bot, event, text)
+    await enqueue(bot, event, text)
 
 
 async def _cmd_chatsys(

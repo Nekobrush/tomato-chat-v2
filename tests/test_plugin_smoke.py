@@ -39,10 +39,14 @@ def plugin():
 
 @pytest.fixture(autouse=True)
 def _clean_state(plugin):
+    from bot_plugins.ai_chat import queue as chat_queue
+
+    chat_queue.reset("893")
     plugin.pipeline.reset_group("893")
     plugin.STATES.clear()
     plugin.STATES["893"] = plugin.GroupState()
     yield
+    chat_queue.reset("893")
     plugin.pipeline.reset_group("893")
 
 
@@ -135,6 +139,10 @@ async def test_chat_command(plugin, monkeypatch: pytest.MonkeyPatch) -> None:
 
     bot = FakeBot()
     await plugin.handle_command(bot, make_event("y chat 你好"))
+    # 现在走队列：指令先入队，回复在后台生成
+    from bot_plugins.ai_chat import queue as chat_queue
+
+    await chat_queue.wait_idle("893")
     assert bot.last_text == "你好喵"
     roles = [record.role for record in plugin.pipeline.store.records("893")]
     assert roles == ["user", "assistant"]
@@ -156,6 +164,9 @@ async def test_tome_message_auto_reply(plugin, monkeypatch: pytest.MonkeyPatch) 
 
     bot = FakeBot()
     await plugin.handle_group_message(bot, make_event("在吗", to_me=True))
+    from bot_plugins.ai_chat import queue as chat_queue
+
+    await chat_queue.wait_idle("893")
     assert bot.last_text == "在的喵"
 
 
