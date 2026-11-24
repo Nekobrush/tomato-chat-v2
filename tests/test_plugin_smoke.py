@@ -14,6 +14,7 @@ from nonebot.adapters.onebot.v11.event import Sender
 
 ROOT = Path(__file__).resolve().parents[1]
 SUPERUSER = 1919810
+GROUP = "893"  # 测试用群号：要换群只改这一处
 
 
 @pytest.fixture(scope="module")
@@ -41,14 +42,14 @@ def plugin():
 def _clean_state(plugin):
     from bot_plugins.ai_chat import queue as chat_queue
 
-    chat_queue.reset("893")
-    plugin.pipeline.reset_group("893")
+    chat_queue.reset(GROUP)
+    plugin.pipeline.reset_group(GROUP)
     plugin.pipeline.reset_group("private:12345")
     plugin.STATES.clear()
-    plugin.STATES["893"] = plugin.GroupState()
+    plugin.STATES[GROUP] = plugin.GroupState()
     yield
-    chat_queue.reset("893")
-    plugin.pipeline.reset_group("893")
+    chat_queue.reset(GROUP)
+    plugin.pipeline.reset_group(GROUP)
     plugin.pipeline.reset_group("private:12345")
 
 
@@ -134,7 +135,7 @@ async def test_chatsys_persistent(plugin) -> None:
     bot = FakeBot()
     await plugin.handle_command(bot, make_event("y chatsys 你是猫 --p", user_id=SUPERUSER, role="owner"))
     assert "记住啦" in bot.last_text
-    records = plugin.pipeline.store.records("893")
+    records = plugin.pipeline.store.records(GROUP)
     assert records[-1].content == "你是猫"
     assert records[-1].mark == "persistence"
     assert plugin.pipeline.store.max_record == plugin.cfg.MAX_MEMORY + 1
@@ -153,9 +154,9 @@ async def test_chat_command(plugin, monkeypatch: pytest.MonkeyPatch) -> None:
     # 现在走队列：指令先入队，回复在后台生成
     from bot_plugins.ai_chat import queue as chat_queue
 
-    await chat_queue.wait_idle("893")
+    await chat_queue.wait_idle(GROUP)
     assert bot.last_text == "你好喵"
-    roles = [record.role for record in plugin.pipeline.store.records("893")]
+    roles = [record.role for record in plugin.pipeline.store.records(GROUP)]
     assert roles == ["user", "assistant"]
 
 
@@ -177,7 +178,7 @@ async def test_tome_message_auto_reply(plugin, monkeypatch: pytest.MonkeyPatch) 
     await plugin.handle_group_message(bot, make_event("在吗", to_me=True))
     from bot_plugins.ai_chat import queue as chat_queue
 
-    await chat_queue.wait_idle("893")
+    await chat_queue.wait_idle(GROUP)
     assert bot.last_text == "在的喵"
 
 
@@ -185,7 +186,7 @@ async def test_plain_message_without_water_only_records(plugin) -> None:
     bot = FakeBot()
     await plugin.handle_group_message(bot, make_event("随便聊聊"))
     assert bot.sent == []
-    records = plugin.pipeline.store.records("893")
+    records = plugin.pipeline.store.records(GROUP)
     assert len(records) == 1
     assert records[0].role == "user"
 
@@ -203,7 +204,7 @@ async def test_plain_message_pure_image_ignored(plugin, monkeypatch: pytest.Monk
     event = make_event(message=Message(MessageSegment.image("a.jpg")))
     await plugin.handle_group_message(bot, event)
     assert bot.sent == []
-    assert plugin.pipeline.store.count("893") == 0
+    assert plugin.pipeline.store.count(GROUP) == 0
 
 
 async def test_chatset_probability_limits(plugin) -> None:
@@ -213,11 +214,11 @@ async def test_chatset_probability_limits(plugin) -> None:
 
     bot = FakeBot()
     await plugin.handle_command(bot, make_event("y chatset p 50%", user_id=SUPERUSER, role="owner"))
-    assert plugin.STATES["893"].water_probability == pytest.approx(0.5)
+    assert plugin.STATES[GROUP].water_probability == pytest.approx(0.5)
 
     bot = FakeBot()
     await plugin.handle_command(bot, make_event("y chatset p 3%"))
-    assert plugin.STATES["893"].water_probability == pytest.approx(0.03)
+    assert plugin.STATES[GROUP].water_probability == pytest.approx(0.03)
 
 
 async def test_chatset_switch_source_invalid(plugin) -> None:
@@ -235,11 +236,11 @@ async def test_chatset_unknown_action(plugin) -> None:
 async def test_chatstart_chatstop(plugin) -> None:
     bot = FakeBot()
     await plugin.handle_command(bot, make_event("y chatstart", role="admin"))
-    assert plugin.STATES["893"].water_enabled is True
+    assert plugin.STATES[GROUP].water_enabled is True
 
     bot = FakeBot()
     await plugin.handle_command(bot, make_event("y chatstop", role="admin"))
-    assert plugin.STATES["893"].water_enabled is False
+    assert plugin.STATES[GROUP].water_enabled is False
 
 
 async def test_msg_outside_allowed_group_ignored(plugin) -> None:
@@ -289,7 +290,7 @@ async def test_private_message_replies(plugin, monkeypatch: pytest.MonkeyPatch) 
     # 私聊记忆单独存，不污染群记忆
     records = plugin.pipeline.store.records("private:12345")
     assert [record.role for record in records] == ["user", "assistant"]
-    assert plugin.pipeline.store.count("893") == 0
+    assert plugin.pipeline.store.count(GROUP) == 0
 
 
 async def test_private_disabled_by_config(plugin, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -362,13 +363,13 @@ async def test_tome_image_message_is_recognized(plugin, monkeypatch: pytest.Monk
         message=Message(MessageSegment("image", {"file": "a.jpg", "url": "https://example.com/a.jpg"})),
     )
     await plugin.handle_group_message(bot, event)
-    await chat_queue.wait_idle("893")
+    await chat_queue.wait_idle(GROUP)
 
     assert bot.last_text == "好可爱的图"
     assert downloaded and downloaded[0]["sources"] == ["https://example.com/a.jpg"]
     assert captured["messages"][-1]["images"] == [{"base64": "QUJD", "mime": "image/png"}]
     # 记忆里留个占位符，否则历史里会出现一条空消息
-    assert "[图片]" in plugin.pipeline.store.records("893")[0].content
+    assert "[图片]" in plugin.pipeline.store.records(GROUP)[0].content
 
 
 async def test_water_image_recognized_when_roll_passes(plugin, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -386,7 +387,7 @@ async def test_water_image_recognized_when_roll_passes(plugin, monkeypatch: pyte
     monkeypatch.setattr(plugin.pipeline.random, "random", lambda: 1.0)
     monkeypatch.setattr(plugin, "random_float", lambda: 0.0)
 
-    state = plugin.STATES.setdefault("893", plugin.GroupState())
+    state = plugin.STATES.setdefault(GROUP, plugin.GroupState())
     state.water_enabled = True
     state.water_probability = 0.03
 
@@ -406,7 +407,7 @@ async def test_water_image_not_downloaded_when_roll_fails(plugin, monkeypatch: p
     downloaded = _patch_vision(plugin, monkeypatch)
     monkeypatch.setattr(plugin, "random_float", lambda: 0.99)
 
-    state = plugin.STATES.setdefault("893", plugin.GroupState())
+    state = plugin.STATES.setdefault(GROUP, plugin.GroupState())
     state.water_enabled = True
     state.water_probability = 0.03
 
@@ -418,4 +419,4 @@ async def test_water_image_not_downloaded_when_roll_fails(plugin, monkeypatch: p
 
     assert bot.sent == []
     assert downloaded == []  # 没轮到开口就不该下载
-    assert plugin.pipeline.store.count("893") == 1
+    assert plugin.pipeline.store.count(GROUP) == 1

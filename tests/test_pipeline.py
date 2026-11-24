@@ -3,6 +3,8 @@
 import pytest
 
 import bot_config as cfg
+
+BOT_ID = 10000  # 测试里代表机器人自己的 QQ 号
 import bot_plugins.ai_chat.pipeline as pipeline
 from bot_plugins.ai_chat import prompts
 from bot_plugins.ai_chat.model import LLMError
@@ -23,7 +25,7 @@ async def test_generate_reply_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     group_id = "test-ok"
     pipeline.reset_group(group_id)
 
-    messages = await pipeline.generate_reply(group_id, 10000, reply_id=1)
+    messages = await pipeline.generate_reply(group_id, BOT_ID, reply_id=1)
     assert messages[0].extract_plain_text() == "你好喵"
     records = pipeline.store.records(group_id)
     assert [r.role for r in records] == ["assistant"]
@@ -35,7 +37,7 @@ async def test_generate_reply_adds_tip_when_no_emotion(monkeypatch: pytest.Monke
     group_id = "test-noemotion"
     pipeline.reset_group(group_id)
 
-    messages = await pipeline.generate_reply(group_id, 10000)
+    messages = await pipeline.generate_reply(group_id, BOT_ID)
     assert messages[0].extract_plain_text() == "你好喵"
     records = pipeline.store.records(group_id)
     assert [r.role for r in records] == ["assistant", "system"]
@@ -47,7 +49,7 @@ async def test_generate_reply_adds_tip_when_too_long(monkeypatch: pytest.MonkeyP
     group_id = "test-long"
     pipeline.reset_group(group_id)
 
-    await pipeline.generate_reply(group_id, 10000)
+    await pipeline.generate_reply(group_id, BOT_ID)
     records = pipeline.store.records(group_id)
     assert "太长" in records[-1].content
 
@@ -61,7 +63,7 @@ async def test_generate_reply_propagates_error(monkeypatch: pytest.MonkeyPatch) 
     pipeline.reset_group(group_id)
 
     with pytest.raises(LLMError):
-        await pipeline.generate_reply(group_id, 10000)
+        await pipeline.generate_reply(group_id, BOT_ID)
     assert pipeline.store.count(group_id) == 0
 
 
@@ -114,7 +116,7 @@ def test_build_messages_single_system() -> None:
     pipeline.remember_system(group_id, "上一轮太长了")
     pipeline.remember_user(group_id, "小明", 123, "你好")
 
-    messages = pipeline.build_messages(group_id, 10000)
+    messages = pipeline.build_messages(group_id, BOT_ID)
     assert messages[0]["role"] == "system"
     assert [m["role"] for m in messages].count("system") == 1
     # 持久化设定属于稳定前缀
@@ -131,10 +133,10 @@ def test_build_messages_prefix_is_stable() -> None:
     group_id = "test-stable"
     pipeline.reset_group(group_id)
     pipeline.remember_user(group_id, "小明", 123, "第一句")
-    first = pipeline.build_messages(group_id, 10000)
+    first = pipeline.build_messages(group_id, BOT_ID)
 
     pipeline.remember_user(group_id, "小明", 123, "第二句")
-    second = pipeline.build_messages(group_id, 10000)
+    second = pipeline.build_messages(group_id, BOT_ID)
 
     prefix = len(first) - 1  # 去掉上一轮末尾那条带时间戳的 user 消息
     assert second[:prefix] == first[:prefix]
@@ -146,17 +148,17 @@ def test_build_messages_strips_old_timestamps() -> None:
     for index in range(4):
         pipeline.remember_user(group_id, "小明", 123, f"第{index}句", 1763000000000)
 
-    messages = pipeline.build_messages(group_id, 10000)
+    messages = pipeline.build_messages(group_id, BOT_ID)
     dialog = [m for m in messages if m["role"] in {"user", "assistant"}][-4:]
     assert dialog[0]["content"].startswith("小明(123):")
     assert dialog[-1]["content"].startswith("[1763000000000]")
 
 
 def test_system_context_uses_ms() -> None:
-    context = pipeline.system_context(10000)
+    context = pipeline.system_context(BOT_ID)
     assert context["role"] == "system"
     assert "毫秒级时间戳" in context["content"]
-    assert "10000" in context["content"]
+    assert str(BOT_ID) in context["content"]
 
 
 def test_focus_hint_names_the_target() -> None:
@@ -173,7 +175,7 @@ def test_build_messages_appends_focus_at_the_end() -> None:
     pipeline.reset_group(group_id)
     pipeline.remember_user(group_id, "小明", 123, "在吗")
 
-    messages = pipeline.build_messages(group_id, 10000, focus="FOCUS-指令-123")
+    messages = pipeline.build_messages(group_id, BOT_ID, focus="FOCUS-指令-123")
     assert messages[-1]["role"] == "user"
     assert messages[-1]["content"].rstrip().endswith("FOCUS-指令-123")
     # 前缀（system）不受影响，缓存仍然有效
@@ -184,8 +186,8 @@ def test_focus_does_not_change_prefix() -> None:
     group_id = "test-focus-prefix"
     pipeline.reset_group(group_id)
     pipeline.remember_user(group_id, "小明", 123, "在吗")
-    plain = pipeline.build_messages(group_id, 10000)
-    focused = pipeline.build_messages(group_id, 10000, focus="FOCUS")
+    plain = pipeline.build_messages(group_id, BOT_ID)
+    focused = pipeline.build_messages(group_id, BOT_ID, focus="FOCUS")
     assert plain[:-1] == focused[:-1]
 
 
@@ -271,7 +273,7 @@ def test_build_messages_attaches_images_to_last_user() -> None:
     pipeline.remember_user(group_id, "tester", 1, "[图片]")
     images = [{"base64": "QUJD", "mime": "image/png"}]
 
-    messages = pipeline.build_messages(group_id, 10000, images=images)
+    messages = pipeline.build_messages(group_id, BOT_ID, images=images)
     assert messages[-1]["role"] == "user"
     assert messages[-1]["images"] == images
     assert "附带了 1 张图片" in messages[-1]["content"]
@@ -285,7 +287,7 @@ def test_build_messages_without_images_has_no_image_key() -> None:
     pipeline.reset_group(group_id)
     pipeline.remember_user(group_id, "tester", 1, "你好")
 
-    messages = pipeline.build_messages(group_id, 10000)
+    messages = pipeline.build_messages(group_id, BOT_ID)
     assert all("images" not in message for message in messages)
     pipeline.reset_group(group_id)
 
@@ -312,7 +314,7 @@ def test_build_messages_trims_memory_to_budget(monkeypatch) -> None:
     pipeline.store.clear(group)
     for index in range(8):
         pipeline.store.append(group, "user", f"[{index}]a(1):\n" + "很长的内容" * 10)
-    messages = pipeline.build_messages(group, 10000)
+    messages = pipeline.build_messages(group, BOT_ID)
     assert pipeline.store.tokens(group) <= 90
     assert messages[0]["role"] == "system"
     pipeline.store.clear(group)
