@@ -990,8 +990,17 @@
   const PROMPT_GROUPS = [
     {
       title: "人格设定",
-      keys: ["ai_name", "system", "example_user", "example_assistant", "message_prefix", "message_suffix"],
-      desc: "模型是谁、怎么说话，以及每条消息自动加的前后缀。人设写进每轮请求的最前面，改完下一句回复就会变。",
+      keys: [
+        "ai_name",
+        "system",
+        "example_user",
+        "example_assistant",
+        "message_start",
+        "message_prefix",
+        "message_suffix",
+        "message_end",
+      ],
+      desc: "模型是谁、怎么说话，以及每条消息自动加的起始符、前后缀与结束符。人设写进每轮请求的最前面，改完下一句回复就会变。",
     },
     {
       title: "纠正提示",

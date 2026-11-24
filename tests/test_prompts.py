@@ -104,6 +104,30 @@ def test_message_prefix_and_suffix_apply_immediately() -> None:
     assert prompts.decorate("你好") == f"【{cfg.AI_NAME}】你好—— 完"
 
 
+def test_message_suffix_before_trailing_punctuation() -> None:
+    payload = _payload()
+    payload["message_suffix"] = "（喵）"
+    prompts.save(payload)
+
+    assert prompts.decorate("你好。") == "你好（喵）。"
+    assert prompts.decorate("真的吗？！") == "真的吗（喵）？！"
+    assert prompts.decorate("好耶") == "好耶（喵）"
+    assert prompts.decorate("嗯…") == "嗯（喵）…"
+
+
+def test_message_start_and_end_are_outside() -> None:
+    payload = _payload()
+    payload["message_start"] = "【"
+    payload["message_prefix"] = "前缀:"
+    payload["message_suffix"] = ":后缀"
+    payload["message_end"] = "】"
+    prompts.save(payload)
+
+    assert prompts.decorate("你好。") == "【前缀:你好:后缀。】"
+    # 结束符不判断标点，永远在最后
+    assert prompts.decorate("没有标点") == "【前缀:没有标点:后缀】"
+
+
 def test_message_prefix_and_suffix_can_be_empty() -> None:
     payload = _payload()
     payload["message_prefix"] = ""

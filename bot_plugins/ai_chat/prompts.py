@@ -47,8 +47,14 @@ DEFAULT_EXAMPLE_ASSISTANT = (
 )
 
 # 每条发出的消息都会自动套上前后缀（相对模型输出而言，情绪标记之后）
+# 结构：起始符 + 前缀 + 正文 + 后缀 + 句末标点 + 结束符
 DEFAULT_MESSAGE_PREFIX = ""
 DEFAULT_MESSAGE_SUFFIX = ""
+DEFAULT_MESSAGE_START = ""
+DEFAULT_MESSAGE_END = ""
+
+# 后缀要插在这些标点前面，而不是硬接在句末标点之后
+TRAILING_PUNCTUATION = "。．！？!?…～~，,、；;：:·"
 
 DEFAULT_TIP_NO_EMOTION = "你的最后一句回复没有附加情绪，请确保回复以“--*情绪*--”结尾。"
 DEFAULT_TIP_TOO_LONG = "你的回复太长了，请控制在 {limit} 字以内。"
@@ -80,8 +86,10 @@ DEFAULTS: dict[str, Any] = {
     "system": DEFAULT_SYSTEM,
     "example_user": DEFAULT_EXAMPLE_USER,
     "example_assistant": DEFAULT_EXAMPLE_ASSISTANT,
+    "message_start": DEFAULT_MESSAGE_START,
     "message_prefix": DEFAULT_MESSAGE_PREFIX,
     "message_suffix": DEFAULT_MESSAGE_SUFFIX,
+    "message_end": DEFAULT_MESSAGE_END,
     "tip_no_emotion": DEFAULT_TIP_NO_EMOTION,
     "tip_too_long": DEFAULT_TIP_TOO_LONG,
     "reqfail_tips": list(DEFAULT_REQFAIL_TIPS),
@@ -127,6 +135,14 @@ FIELDS: list[dict[str, Any]] = [
         "help": "对应的回复，记得以「--*情绪*--」结尾。",
     },
     {
+        "key": "message_start",
+        "label": "消息起始符",
+        "kind": "str",
+        "rows": 1,
+        "maxlength": 40,
+        "help": "比前缀更靠前，加在整条消息最开头；可以留空。支持 {ai_name}。",
+    },
+    {
         "key": "message_prefix",
         "label": "消息前缀",
         "kind": "str",
@@ -140,7 +156,15 @@ FIELDS: list[dict[str, Any]] = [
         "kind": "str",
         "rows": 1,
         "maxlength": 40,
-        "help": "每条发出的消息都会自动加上这段后缀；可以留空。支持 {ai_name}。",
+        "help": "每条发出的消息都会自动加上这段后缀；句尾是标点时会插在标点前面。可以留空。支持 {ai_name}。",
+    },
+    {
+        "key": "message_end",
+        "label": "消息结束符",
+        "kind": "str",
+        "rows": 1,
+        "maxlength": 40,
+        "help": "比后缀更靠后，加在整条消息最末尾（不判断标点，永远最后）；可以留空。支持 {ai_name}。",
     },
     {
         "key": "tip_no_emotion",
@@ -254,8 +278,10 @@ def _validate(payload: dict[str, Any]) -> dict[str, Any]:
     data["system"] = _require_text(payload, "system", "人设", 12000)
     data["example_user"] = _require_text(payload, "example_user", "示例用户消息", 2000)
     data["example_assistant"] = _require_text(payload, "example_assistant", "示例回复", 2000)
+    data["message_start"] = _optional_text(payload, "message_start", "消息起始符", 40)
     data["message_prefix"] = _optional_text(payload, "message_prefix", "消息前缀", 40)
     data["message_suffix"] = _optional_text(payload, "message_suffix", "消息后缀", 40)
+    data["message_end"] = _optional_text(payload, "message_end", "消息结束符", 40)
     data["tip_no_emotion"] = _require_text(payload, "tip_no_emotion", "缺情绪提示", 500)
     data["tip_too_long"] = _require_text(payload, "tip_too_long", "太长提示", 500)
     data["private_note"] = _require_text(payload, "private_note", "私聊说明", 500)
@@ -294,8 +320,10 @@ SYSTEM_PROMPT = ""
 SYSTEM_MESSAGES: list[dict[str, str]] = []
 TIPS_NO_EMOTION = ""
 TIPS_TOO_LONG = ""
+MESSAGE_START = DEFAULT_MESSAGE_START
 MESSAGE_PREFIX = DEFAULT_MESSAGE_PREFIX
 MESSAGE_SUFFIX = DEFAULT_MESSAGE_SUFFIX
+MESSAGE_END = DEFAULT_MESSAGE_END
 REQFAIL_TIPS: list[str] = []
 EMPTY_REPLY = DEFAULT_EMPTY_REPLY
 PRIVATE_NOTE = DEFAULT_PRIVATE_NOTE
@@ -303,15 +331,30 @@ FOCUS_HINT_TEMPLATE = DEFAULT_FOCUS_HINT
 CONTEXT_NOTE_TEMPLATE = DEFAULT_CONTEXT_NOTE
 
 
+def _split_trailing_punctuation(text: str) -> tuple[str, str]:
+    """把结尾连续的标点切出来，后缀要插在它们前面。"""
+    index = len(text)
+    while index > 0 and text[index - 1] in TRAILING_PUNCTUATION:
+        index -= 1
+    return text[:index], text[index:]
+
+
 def decorate(text: str) -> str:
-    """给一条要发出去的消息套上前后缀。"""
-    return f"{MESSAGE_PREFIX}{text}{MESSAGE_SUFFIX}"
+    """给一条要发出去的消息套上起始符、前后缀与结束符。
+
+    结构：起始符 + 前缀 + 正文 + 后缀 + 句末标点 + 结束符
+    后缀遇到句尾标点时会插在标点前面（``你好。（喵）`` → ``你好（喵）。``），
+    结束符不参与这个判断，永远在最后。
+    """
+    body, punctuation = _split_trailing_punctuation(text)
+    return f"{MESSAGE_START}{MESSAGE_PREFIX}{body}{MESSAGE_SUFFIX}{punctuation}{MESSAGE_END}"
 
 
 def apply(data: dict[str, Any]) -> None:
     """把一份（已校验的）配置渲染进模块级常量，立即生效。"""
     global SYSTEM_PROMPT, SYSTEM_MESSAGES, TIPS_NO_EMOTION, TIPS_TOO_LONG
-    global MESSAGE_PREFIX, MESSAGE_SUFFIX, REQFAIL_TIPS, EMPTY_REPLY, PRIVATE_NOTE
+    global MESSAGE_START, MESSAGE_PREFIX, MESSAGE_SUFFIX, MESSAGE_END
+    global REQFAIL_TIPS, EMPTY_REPLY, PRIVATE_NOTE
     global FOCUS_HINT_TEMPLATE, CONTEXT_NOTE_TEMPLATE
 
     SYSTEM_PROMPT = render(data["system"], ai_name=data["ai_name"], emotions=EMOTION_LIST)
@@ -321,8 +364,10 @@ def apply(data: dict[str, Any]) -> None:
     SYSTEM_MESSAGES.append({"role": "user", "content": data["example_user"]})
     SYSTEM_MESSAGES.append({"role": "assistant", "content": data["example_assistant"]})
 
+    MESSAGE_START = render(data["message_start"], ai_name=data["ai_name"])
     MESSAGE_PREFIX = render(data["message_prefix"], ai_name=data["ai_name"])
     MESSAGE_SUFFIX = render(data["message_suffix"], ai_name=data["ai_name"])
+    MESSAGE_END = render(data["message_end"], ai_name=data["ai_name"])
     TIPS_NO_EMOTION = data["tip_no_emotion"]
     TIPS_TOO_LONG = render(data["tip_too_long"], limit=cfg.RESP_LEN_LIMIT)
     REQFAIL_TIPS = list(data["reqfail_tips"])
