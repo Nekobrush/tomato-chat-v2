@@ -98,6 +98,20 @@ def test_format_user_message() -> None:
     assert body == "你好"
 
 
+def test_build_messages_single_system() -> None:
+    group_id = "test-build"
+    pipeline.reset_group(group_id)
+    pipeline.remember_system(group_id, "你是猫娘")
+    pipeline.remember_user(group_id, "小明", 123, "你好")
+
+    messages = pipeline.build_messages(group_id, 10000)
+    assert messages[0]["role"] == "system"
+    assert [m["role"] for m in messages].count("system") == 1
+    assert "你是猫娘" in messages[0]["content"]
+    assert "毫秒级时间戳" in messages[0]["content"]
+    assert messages[-1]["role"] == "user"
+
+
 def test_system_context_uses_ms() -> None:
     context = pipeline.system_context(10000)
     assert context["role"] == "system"

@@ -22,17 +22,43 @@ ALLOW_GROUPS = {"893"}
 # 群主/群管理员会自动获得群级指令权限（开关水群、清空记忆等）。
 
 # ------------------------------- 模型 -------------------------------
-# 模型源：key 为源名称，value 为 ollama 地址与候选模型
+# 模型源：key 是源名称，value 是连接信息。
+#   type     "ollama"（ollama 原生协议）或 "openai"（OpenAI 兼容 API，含 LM Studio / DeepSeek / OneAPI 等）
+#   label    显示用名称
+#   url      服务地址；OpenAI 兼容源可以省略结尾的 /v1
+#   api_key  可选，Bearer Token；本地服务留空即可
+#   model    候选模型列表（可用 chatset ss 自动同步）
+#   extra_body  可选，OpenAI 兼容源额外透传给接口的字段（如 top_k、repeat_penalty）
 MODELS = {
     "local": {
-        "label": "本地",
-        "url": "http://localhost:11434",  # ollama 服务地址
+        "type": "ollama",
+        "label": "本地 ollama",
+        "url": "http://localhost:11434",
         "model": ["llama3.1:latest"],
     },
+    "lmstudio": {
+        "type": "openai",
+        "label": "LM Studio",
+        "url": "http://127.0.0.1:1234",  # 也可以写成 http://127.0.0.1:1234/v1
+        "api_key": "",
+        "model": ["qwen3.5-9b@q6_k", "deepseek-r1-0528-qwen3-8b"],
+        # 这两类模型默认会「先思考再回答」，128 token 会被思考内容吃光，
+        # LM Studio 支持用 reasoning_effort=none 关闭思考（不支持的服务去掉这一行）
+        "extra_body": {"reasoning_effort": "none"},
+    },
+    # 云端 API 示例：需要时取消注释，把 key 填进去（也可以写 os.getenv("DEEPSEEK_API_KEY", "")）
+    # "deepseek": {
+    #     "type": "openai",
+    #     "label": "DeepSeek",
+    #     "url": "https://api.deepseek.com",
+    #     "api_key": "sk-xxxx",
+    #     "model": ["deepseek-chat"],
+    # },
 }
 
 # 默认使用的模型源 / 模型下标
-DEFAULT_SOURCE = "local"
+# 装了 ollama 就改成 "local"；用 LM Studio 就保持 "lmstudio"（启动 LM Studio 的 server 模式）
+DEFAULT_SOURCE = "lmstudio"
 DEFAULT_MODEL_INDEX = 0
 
 # ------------------------------- 生成参数 -------------------------------

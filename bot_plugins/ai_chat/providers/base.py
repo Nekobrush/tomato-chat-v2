@@ -1,0 +1,90 @@
+"""模型提供方的抽象层。
+
+- `GenerationParams`：与具体协议无关的生成参数，各 provider 自己映射。
+- `ChatProvider`：一个模型源（一组地址 + 若干模型）的客户端接口。
+"""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, ClassVar
+
+import bot_config as cfg
+
+from ..errors import LLMError
+
+
+@dataclass(frozen=True, slots=True)
+class GenerationParams:
+    """统一的生成参数，避免各 provider 各读一份配置。"""
+
+    temperature: float = 0.85
+    top_p: float = 0.975
+    top_k: int = 70
+    max_tokens: int = 128
+    num_ctx: int = 8192
+    repeat_penalty: float = 1.55
+
+    @classmethod
+    def from_config(cls) -> GenerationParams:
+        return cls(
+            temperature=getattr(cfg, "TEMPERATURE", cls.temperature),
+            top_p=getattr(cfg, "TOP_P", cls.top_p),
+            top_k=getattr(cfg, "TOP_K", cls.top_k),
+            max_tokens=getattr(cfg, "PREDICT", cls.max_tokens),
+            num_ctx=getattr(cfg, "GLOBAL_CTX", cls.num_ctx),
+            repeat_penalty=getattr(cfg, "REPEAT_PENALTY", cls.repeat_penalty),
+        )
+
+
+class ChatProvider(ABC):
+    """模型源客户端。子类只需实现 `list_models` 与 `chat`。"""
+
+    kind: ClassVar[str] = "base"
+    kind_label: ClassVar[str] = "基础"
+
+    def __init__(
+        self,
+        name: str,
+        spec: dict[str, Any],
+        *,
+        params: GenerationParams,
+        timeout: float,
+    ) -> None:
+        if not isinstance(spec, dict):
+            raise LLMError(f"模型源 {name!r} 的配置必须是字典")
+        url = str(spec.get("url") or "").strip()
+        if not url:
+            raise LLMError(f"模型源 {name!r} 缺少 url")
+        self.name = name
+        self.spec = spec
+        self.params = params
+        self.timeout = timeout
+        self.url = url
+
+    # ------------------------------------------------------------------ 元信息
+    @property
+    def label(self) -> str:
+        return str(self.spec.get("label") or self.name)
+
+    @property
+    def api_key(self) -> str:
+        key = self.spec.get("api_key")
+        return str(key).strip() if key else ""
+
+    def describe(self) -> str:
+        return f"{self.label}（{self.kind_label}）"
+
+    # ------------------------------------------------------------------ 接口
+    @abstractmethod
+    async def list_models(self) -> list[str]:
+        """返回该模型源当前可用的模型名，用于 `chatset ss`。"""
+
+    @abstractmethod
+    async def chat(self, model: str, messages: list[dict[str, str]]) -> str:
+        """生成一次回复，返回非空文本；失败抛 `LLMError`。"""
+
+    async def aclose(self) -> None:
+        """释放底层连接，默认什么都不做。"""
+        return None

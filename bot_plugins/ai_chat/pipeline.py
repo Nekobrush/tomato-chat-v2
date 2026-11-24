@@ -82,9 +82,22 @@ def system_context(bot_id: int | str) -> dict[str, str]:
 
 
 def build_messages(group_id: str, bot_id: int | str) -> list[dict[str, str]]:
-    messages: list[dict[str, str]] = list(SYSTEM_MESSAGES)
-    messages.append(system_context(bot_id))
-    messages.extend(store.messages(group_id))
+    """组装请求消息。
+
+    只保留**一条**开头的 system 消息：部分 OpenAI 兼容服务（如 LM Studio 的 Qwen
+    模板）会拒绝出现在对话中间的 system，`chatsys` 追加的设定也因此统一提到开头。
+    """
+    history = store.messages(group_id)
+
+    system_parts = [SYSTEM_MESSAGES[0]["content"]]
+    system_parts.extend(
+        record["content"] for record in history if record["role"] == "system"
+    )
+    system_parts.append(system_context(bot_id)["content"])
+
+    messages: list[dict[str, str]] = [{"role": "system", "content": "\n\n".join(system_parts)}]
+    messages.extend(SYSTEM_MESSAGES[1:])
+    messages.extend(record for record in history if record["role"] != "system")
     return messages
 
 

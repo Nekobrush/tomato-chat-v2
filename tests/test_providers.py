@@ -1,0 +1,319 @@
+"""模型后端测试：OpenAI 兼容协议用 httpx.MockTransport，ollama 用假客户端。"""
+
+from __future__ import annotations
+
+import json
+
+import httpx
+import pytest
+
+from bot_plugins.ai_chat.errors import LLMError
+from bot_plugins.ai_chat.providers import SUPPORTED_TYPES, create_provider, provider_type
+from bot_plugins.ai_chat.providers.base import GenerationParams
+from bot_plugins.ai_chat.providers.ollama import OllamaProvider
+from bot_plugins.ai_chat.providers.openai import OpenAICompatibleProvider, normalize_base_url
+
+PARAMS = GenerationParams(
+    temperature=0.7,
+    top_p=0.9,
+    top_k=40,
+    max_tokens=64,
+    num_ctx=2048,
+    repeat_penalty=1.2,
+)
+
+
+# ---------------------------------------------------------------------------
+# URL / 注册表
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("http://127.0.0.1:1234", "http://127.0.0.1:1234/v1"),
+        ("http://127.0.0.1:1234/", "http://127.0.0.1:1234/v1"),
+        ("http://127.0.0.1:1234/v1", "http://127.0.0.1:1234/v1"),
+        ("http://127.0.0.1:1234/v1/", "http://127.0.0.1:1234/v1"),
+        ("https://api.deepseek.com", "https://api.deepseek.com/v1"),
+    ],
+)
+def test_normalize_base_url(raw: str, expected: str) -> None:
+    assert normalize_base_url(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("ollama", "ollama"),
+        ("openai", "openai"),
+        ("openai-compatible", "openai"),
+        ("openai_compatible", "openai"),
+        ("lmstudio", "openai"),
+        ("LM-Studio", "openai"),
+        ("api", "openai"),
+        (None, "ollama"),
+        ("weird", "weird"),
+    ],
+)
+def test_provider_type(raw: str | None, expected: str) -> None:
+    spec = {} if raw is None else {"type": raw}
+    assert provider_type(spec) == expected
+
+
+def test_supported_types() -> None:
+    assert set(SUPPORTED_TYPES) == {"ollama", "openai"}
+
+
+def test_create_provider_unknown_type() -> None:
+    with pytest.raises(LLMError, match="不受支持"):
+        create_provider("x", {"type": "nope", "url": "http://x"}, params=PARAMS, timeout=1)
+
+
+def test_create_provider_requires_url() -> None:
+    with pytest.raises(LLMError, match="缺少 url"):
+        create_provider("x", {"type": "openai"}, params=PARAMS, timeout=1)
+
+
+async def test_create_provider_alias() -> None:
+    provider = create_provider(
+        "lm",
+        {"type": "lmstudio", "url": "http://127.0.0.1:1234"},
+        params=PARAMS,
+        timeout=1,
+    )
+    assert isinstance(provider, OpenAICompatibleProvider)
+    await provider.aclose()
+
+
+# ---------------------------------------------------------------------------
+# OpenAI 兼容
+# ---------------------------------------------------------------------------
+
+
+def _openai(spec: dict | None = None) -> OpenAICompatibleProvider:
+    base = {"url": "http://test.local", "model": ["m"]}
+    base.update(spec or {})
+    return OpenAICompatibleProvider("api", base, params=PARAMS, timeout=5)
+
+
+async def _install(
+    provider: OpenAICompatibleProvider,
+    handler,
+) -> None:
+    headers = dict(provider._client.headers)
+    await provider._client.aclose()
+    provider._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url=f"{provider.base_url}/",
+        headers=headers,
+    )
+
+
+async def test_openai_chat_payload() -> None:
+    provider = _openai({"api_key": "k", "extra_body": {"repeat_penalty": 1.1}})
+    seen: dict = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers.get("authorization")
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"role": "assistant", "content": "你好喵"}}]},
+        )
+
+    await _install(provider, handler)
+    messages = [{"role": "user", "content": "hi"}]
+    assert await provider.chat("m", messages) == "你好喵"
+
+    assert seen["url"] == "http://test.local/v1/chat/completions"
+    assert seen["auth"] == "Bearer k"
+    body = seen["body"]
+    assert body["model"] == "m"
+    assert body["messages"] == messages
+    assert body["stream"] is False
+    assert body["temperature"] == 0.7
+    assert body["top_p"] == 0.9
+    assert body["max_tokens"] == 64
+    assert body["repeat_penalty"] == 1.1
+
+
+async def test_openai_chat_content_parts() -> None:
+    provider = _openai()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"content": [{"text": "你"}, {"text": "好"}]}}
+                ]
+            },
+        )
+
+    await _install(provider, handler)
+    assert await provider.chat("m", []) == "你好"
+
+
+async def test_openai_chat_empty_choices() -> None:
+    provider = _openai()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": []})
+
+    await _install(provider, handler)
+    with pytest.raises(LLMError, match="choices"):
+        await provider.chat("m", [])
+
+
+async def test_openai_chat_reasoning_only() -> None:
+    provider = _openai()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {"content": "", "reasoning_content": "思考中……"},
+                        "finish_reason": "length",
+                    }
+                ]
+            },
+        )
+
+    await _install(provider, handler)
+    with pytest.raises(LLMError, match="reasoning_effort"):
+        await provider.chat("m", [])
+
+
+async def test_openai_chat_http_error() -> None:
+    provider = _openai()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="boom detail")
+
+    await _install(provider, handler)
+    with pytest.raises(LLMError, match="HTTP 500"):
+        await provider.chat("m", [])
+
+
+async def test_openai_list_models() -> None:
+    provider = _openai()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "http://test.local/v1/models"
+        return httpx.Response(200, json={"data": [{"id": "a"}, {"id": "b"}]})
+
+    await _install(provider, handler)
+    assert await provider.list_models() == ["a", "b"]
+
+
+async def test_openai_list_models_empty() -> None:
+    provider = _openai()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": []})
+
+    await _install(provider, handler)
+    with pytest.raises(LLMError, match="没有返回任何模型"):
+        await provider.list_models()
+
+
+# ---------------------------------------------------------------------------
+# ollama
+# ---------------------------------------------------------------------------
+
+
+def _ollama() -> OllamaProvider:
+    return OllamaProvider(
+        "local",
+        {"url": "http://127.0.0.1:1", "model": ["m"]},
+        params=PARAMS,
+        timeout=5,
+    )
+
+
+def test_ollama_options_mapping() -> None:
+    options = dict(_ollama().options)
+    assert options["temperature"] == 0.7
+    assert options["top_p"] == 0.9
+    assert options["top_k"] == 40
+    assert options["num_predict"] == 64
+    assert options["num_ctx"] == 2048
+    assert options["repeat_penalty"] == 1.2
+
+
+class _FakeMessage:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
+class _FakeResponse:
+    def __init__(self, content: str) -> None:
+        self.message = _FakeMessage(content)
+
+
+class _FakeOllamaClient:
+    def __init__(self, response=None, error: Exception | None = None) -> None:
+        self.response = response
+        self.error = error
+        self.calls: list[dict] = []
+
+    async def chat(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        return self.response
+
+    async def list(self):
+        if self.error is not None:
+            raise self.error
+        return self.response
+
+
+async def test_ollama_chat() -> None:
+    provider = _ollama()
+    fake = _FakeOllamaClient(_FakeResponse("在的喵"))
+    provider._client = fake
+
+    result = await provider.chat("m", [{"role": "user", "content": "hi"}])
+    assert result == "在的喵"
+    assert fake.calls[0]["model"] == "m"
+    assert fake.calls[0]["options"]["temperature"] == 0.7
+
+
+async def test_ollama_chat_empty() -> None:
+    provider = _ollama()
+    provider._client = _FakeOllamaClient(_FakeResponse("   "))
+    with pytest.raises(LLMError, match="空内容"):
+        await provider.chat("m", [])
+
+
+async def test_ollama_chat_error() -> None:
+    provider = _ollama()
+    provider._client = _FakeOllamaClient(error=ConnectionError("refused"))
+    with pytest.raises(LLMError, match="refused"):
+        await provider.chat("m", [])
+
+
+async def test_ollama_list_models() -> None:
+    provider = _ollama()
+
+    class Item:
+        def __init__(self, model: str) -> None:
+            self.model = model
+
+    class Response:
+        models = [Item("a:1"), Item("b:2")]
+
+    provider._client = _FakeOllamaClient(Response())
+    assert await provider.list_models() == ["a:1", "b:2"]
+
+
+async def test_ollama_list_models_error() -> None:
+    provider = _ollama()
+    provider._client = _FakeOllamaClient(error=ConnectionError("refused"))
+    with pytest.raises(LLMError, match="refused"):
+        await provider.list_models()
