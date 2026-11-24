@@ -61,8 +61,9 @@ MODELS = {
 }
 
 # 默认使用的模型源 / 模型下标
-# 装了 ollama 就改成 "local"；用 LM Studio 就保持 "lmstudio"（启动 LM Studio 的 server 模式）
-DEFAULT_SOURCE = "lmstudio"
+# 留空时自动使用 MODELS 里的第一个源；用 LM Studio 就写 "lmstudio"（先启动它的 server 模式），
+# 装了 ollama 就写 "local"。
+DEFAULT_SOURCE = "local"
 DEFAULT_MODEL_INDEX = 0
 
 # ------------------------------- 生成参数 -------------------------------

@@ -1,13 +1,22 @@
 # 更新日志
 
-## 未发布 — 仓库卫生
+## v2.0.0 — 2026-11-25
+
+第一个公开发布的 v2 版本，替代上游的 NoneBot1 单文件插件。主要能力：NoneBot2 + OneBot v11、
+ollama / OpenAI 兼容双模型后端、内嵌网页控制台、可编辑的人格与提示词、消息前后缀与分条发送、
+群聊与私聊记忆（可持久化）、按人排队与聚焦、多模态图片识别，测试 227 个。
+
+仓库层面：补齐 `pyproject.toml`、`LICENSE`(MIT)、CI、ruff、Issue / PR 模板、
+Dockerfile 与 systemd unit，并把 README 拆成中英两份。
+
+### 工程化
 
 - 新增 `pyproject.toml`：项目元数据、依赖、`pytest` / `ruff` 配置集中管理；`pytest.ini` 并入后删除。
 - 版本号单一来源：`bot_plugins/ai_chat/_version.py`，WebUI `/api/health` 从它读取。
 - 新增 `ruff` 配置与 CI 中的 lint 步骤；`requirements-dev.txt` 增加 `ruff`。
 - 提供 `tomato-chat` 命令（`pip install -e .[dev]`），`.gitignore` 补充 `build/`、`dist/`。
 
-## v1.0.0 — 2026-11-24
+### 相对上游 v1（NoneBot1 时代）的主要变化
 
 首个基于 NoneBot2 的版本。从原来的 NoneBot1 单文件插件整体重写：框架换代、模型层抽象、加了一整套网页控制台，并把「人设 / 提示词 / 消息装饰 / 分条发送」全部做成可配置项。
 

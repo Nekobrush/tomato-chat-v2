@@ -1853,7 +1853,7 @@
       }
       case "about": {
         const about = $("#about-dialog");
-        $("#about-version").textContent = `v${state.status?.version || "1.0.0"}`;
+        $("#about-version").textContent = `v${state.status?.version || "2.0.0"}`;
         $("#about-started").textContent = state.status?.started_at?.replace("T", " ") || "—";
         about.showModal();
         break;

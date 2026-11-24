@@ -4,7 +4,8 @@ dynamic = ["version"]
 description = "QQ 群猫娘聊天机器人：NoneBot2 + ollama / OpenAI 兼容 API"
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{ name = "tomato-chat contributors" }]
+authors = [{ name = "Nekobrush" }]
+license = { text = "MIT" }
 keywords = ["nonebot2", "onebot", "qq", "chatbot", "ollama", "llm"]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -27,7 +28,9 @@ dependencies = [
 dev = ["pytest>=8.4", "pytest-asyncio>=1.0", "ruff>=0.9"]
 
 [project.urls]
-Homepage = "https://github.com/your-name/tomato-chat"
+Homepage = "https://github.com/Nekobrush/tomato-chat-v2"
+Issues = "https://github.com/Nekobrush/tomato-chat-v2/issues"
+Changelog = "https://github.com/Nekobrush/tomato-chat-v2/blob/main/CHANGELOG.md"
 
 [project.scripts]
 tomato-chat = "launcher:main"

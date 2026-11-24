@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: NoneBot2 documentation
+    url: https://nonebot.dev/
+    about: Framework questions, adapter configuration, driver setup.
+  - name: Security report
+    url: https://github.com/Nekobrush/tomato-chat-v2/security
+    about: Please report vulnerabilities privately, see SECURITY.md.
