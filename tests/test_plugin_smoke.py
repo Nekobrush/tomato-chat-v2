@@ -190,8 +190,11 @@ async def test_plain_message_without_water_only_records(plugin) -> None:
     assert records[0].role == "user"
 
 
-async def test_plain_message_pure_image_ignored(plugin) -> None:
+async def test_plain_message_pure_image_ignored(plugin, monkeypatch: pytest.MonkeyPatch) -> None:
     from nonebot.adapters.onebot.v11 import MessageSegment
+
+    # 模型不支持看图时，行为退回旧版：纯图片消息直接忽略
+    monkeypatch.setattr(plugin, "_vision_ready", lambda: False)
 
     bot = FakeBot()
     event = make_event(message=Message(MessageSegment.image("a.jpg")))
@@ -309,3 +312,104 @@ async def test_private_pure_image_ignored(plugin) -> None:
     event.message = Message(MessageSegment.image("a.jpg"))
     await plugin.handle_private_message(bot, event)
     assert bot.private == []
+
+
+# ---------------------------------------------------------------------------
+# 多模态：@ / 回复必看，其他人按水群概率
+# ---------------------------------------------------------------------------
+
+
+def _patch_vision(plugin, monkeypatch: pytest.MonkeyPatch, parts=None) -> list[dict]:
+    """让插件以为模型支持看图，并拦住真正的网络下载。"""
+    from bot_plugins.ai_chat import vision
+
+    seen: list[dict] = []
+    payload = parts if parts is not None else [{"base64": "QUJD", "mime": "image/png"}]
+
+    async def fake_load(sources):
+        seen.append({"sources": list(sources)})
+        return payload
+
+    monkeypatch.setattr(plugin, "_vision_ready", lambda: True)
+    monkeypatch.setattr(vision, "load_parts", fake_load)
+    return seen
+
+
+async def test_tome_image_message_is_recognized(plugin, monkeypatch: pytest.MonkeyPatch) -> None:
+    from nonebot.adapters.onebot.v11 import MessageSegment
+    from bot_plugins.ai_chat import queue as chat_queue
+
+    downloaded = _patch_vision(plugin, monkeypatch)
+    captured: dict = {}
+
+    async def fake_chat(messages, *, model=None):
+        captured["messages"] = messages
+        return "好可爱的图--*happy*--"
+
+    monkeypatch.setattr(plugin.pipeline.llm, "chat", fake_chat)
+    monkeypatch.setattr(plugin.pipeline, "pick_emotion_image", lambda emotion: None)
+    monkeypatch.setattr(plugin.pipeline.random, "random", lambda: 1.0)
+
+    bot = FakeBot()
+    event = make_event(
+        to_me=True,
+        message=Message(MessageSegment("image", {"file": "a.jpg", "url": "https://example.com/a.jpg"})),
+    )
+    await plugin.handle_group_message(bot, event)
+    await chat_queue.wait_idle("893")
+
+    assert bot.last_text == "好可爱的图"
+    assert downloaded and downloaded[0]["sources"] == ["https://example.com/a.jpg"]
+    assert captured["messages"][-1]["images"] == [{"base64": "QUJD", "mime": "image/png"}]
+    # 记忆里留个占位符，否则历史里会出现一条空消息
+    assert "[图片]" in plugin.pipeline.store.records("893")[0].content
+
+
+async def test_water_image_recognized_when_roll_passes(plugin, monkeypatch: pytest.MonkeyPatch) -> None:
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    _patch_vision(plugin, monkeypatch)
+    captured: dict = {}
+
+    async def fake_chat(messages, *, model=None):
+        captured["messages"] = messages
+        return "好看--*curious*--"
+
+    monkeypatch.setattr(plugin.pipeline.llm, "chat", fake_chat)
+    monkeypatch.setattr(plugin.pipeline, "pick_emotion_image", lambda emotion: None)
+    monkeypatch.setattr(plugin.pipeline.random, "random", lambda: 1.0)
+    monkeypatch.setattr(plugin, "random_float", lambda: 0.0)
+
+    state = plugin.STATES.setdefault("893", plugin.GroupState())
+    state.water_enabled = True
+    state.water_probability = 0.03
+
+    bot = FakeBot()
+    event = make_event(
+        message=Message(MessageSegment("image", {"file": "b.jpg", "url": "https://example.com/b.jpg"}))
+    )
+    await plugin.handle_group_message(bot, event)
+
+    assert bot.last_text == "好看"
+    assert captured["messages"][-1]["images"][0]["base64"] == "QUJD"
+
+
+async def test_water_image_not_downloaded_when_roll_fails(plugin, monkeypatch: pytest.MonkeyPatch) -> None:
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    downloaded = _patch_vision(plugin, monkeypatch)
+    monkeypatch.setattr(plugin, "random_float", lambda: 0.99)
+
+    state = plugin.STATES.setdefault("893", plugin.GroupState())
+    state.water_enabled = True
+    state.water_probability = 0.03
+
+    bot = FakeBot()
+    event = make_event(
+        message=Message(MessageSegment("image", {"file": "c.jpg", "url": "https://example.com/c.jpg"}))
+    )
+    await plugin.handle_group_message(bot, event)
+
+    assert bot.sent == []
+    assert downloaded == []  # 没轮到开口就不该下载
+    assert plugin.pipeline.store.count("893") == 1

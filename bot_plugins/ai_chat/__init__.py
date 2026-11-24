@@ -33,6 +33,7 @@ from .commands import USAGE_TEXT, handle_command
 from .model import llm
 from .runtime import STATES, GroupState, nickname, state as _state
 from .text import parse_command, segments_to_text
+from .vision import image_sources
 
 __plugin_meta__ = PluginMetadata(
     name="番茄猫娘",
@@ -72,6 +73,11 @@ command_matcher.handle()(handle_command)
 # ---------------------------------------------------------------------------
 
 
+def _vision_ready() -> bool:
+    """当前模型能不能看图（总开关 + 模型能力）。"""
+    return bool(cfg.VISION_ENABLED) and llm.supports_vision
+
+
 @chat_matcher.handle()
 async def handle_group_message(bot: Bot, event: GroupMessageEvent) -> None:
     group_id = str(event.group_id)
@@ -80,29 +86,34 @@ async def handle_group_message(bot: Bot, event: GroupMessageEvent) -> None:
         return
 
     text = segments_to_text(event.message, event.self_id)
-    if not text:
-        # 纯图片/表情等无法理解的消息，不回复
+    # 模型看不懂图时，按老行为处理：纯图片消息直接忽略
+    sources = image_sources(event.message) if _vision_ready() else []
+    if not text and not sources:
         return
 
     # 延迟 import：messaging 依赖 pipeline 与本模块用到的单例，避免循环
     from .messaging import chat_and_reply, merge_pending
     from .queue import enqueue
 
+    display_text = text or "[图片]"
+
     # 先按事件时间记录，再排队生成：本地生成一次要几秒，晚记录会把时间线压平
     occurred_at = int(event.time) * 1000 if event.time else None
-    pipeline.remember_user(group_id, nickname(event), event.user_id, text, occurred_at)
+    pipeline.remember_user(group_id, nickname(event), event.user_id, display_text, occurred_at)
 
     if event.is_tome():
+        # @ 机器人、或者有人回复机器人的消息：图必看
         # 生成期间再 @ 的人不会各排一条：同一人合并、不同人按顺序排队
-        await enqueue(bot, event, text)
+        await enqueue(bot, event, display_text, images=sources)
         return
 
+    # 其他人发的图：只有真的轮到水群开口时才去看，避免白白下载
     if not state.water_enabled or random_float() > state.water_probability:
         merge_pending(group_id)
         return
 
     async with pipeline.group_lock(group_id):
-        await chat_and_reply(bot, event, text, silent=True)
+        await chat_and_reply(bot, event, display_text, silent=True, images=sources)
 
 
 def random_float() -> float:

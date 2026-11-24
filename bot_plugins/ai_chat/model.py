@@ -71,6 +71,14 @@ class LLMService:
             )
         return models[self.index]
 
+    @property
+    def supports_vision(self) -> bool:
+        """当前模型能不能看图（由 provider 按模型名或配置判断）。"""
+        try:
+            return self.provider.supports_vision(self.model)
+        except LLMError:
+            return False
+
     def _clamp_index(self) -> None:
         count = len(self.models)
         self.index = 0 if count == 0 else max(0, min(self.index, count - 1))

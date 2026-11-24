@@ -8,6 +8,7 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.log import logger
@@ -133,7 +134,8 @@ def build_messages(
     bot_id: int | str,
     focus: str | None = None,
     note: str | None = None,
-) -> list[dict[str, str]]:
+    images: list[dict[str, str]] | None = None,
+) -> list[dict[str, Any]]:
     """组装请求消息，**让前缀尽量稳定**。
 
     本地推理的 prefill 是实打实的等待时间，而 llama.cpp / LM Studio 只会在
@@ -166,7 +168,7 @@ def build_messages(
     dialog = [record for record in records if record.role != "system"]
 
     system_parts = [prompts.SYSTEM_MESSAGES[0]["content"], *persistent_system]
-    messages: list[dict[str, str]] = [
+    messages: list[dict[str, Any]] = [
         {"role": "system", "content": "\n\n".join(part for part in system_parts if part)}
     ]
     messages.extend(prompts.SYSTEM_MESSAGES[1:])
@@ -193,6 +195,10 @@ def build_messages(
         }
     else:
         messages.append({"role": "user", "content": tail})
+    if images:
+        # 图片只挂在最后一条 user 消息上：模型看到的永远是"这个人刚发的这张图"，
+        # 也不会因为历史里长期挂着 base64 把 prompt 撑爆。
+        messages[-1]["images"] = list(images)
     return messages
 
 
@@ -354,9 +360,10 @@ async def generate_reply(
     *,
     focus: str | None = None,
     note: str | None = None,
+    images: list[dict[str, str]] | None = None,
 ) -> list[Message]:
     """调用模型并返回可直接发送的消息列表。调用方必须持有该群的锁。"""
-    messages = build_messages(group_id, bot_id, focus=focus, note=note)
+    messages = build_messages(group_id, bot_id, focus=focus, note=note, images=images)
     raw = await llm.chat(messages)
 
     without_emoji = remove_emojis(raw)

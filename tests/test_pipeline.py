@@ -265,3 +265,25 @@ def test_split_keeps_punctuation_with_capture_group(monkeypatch: pytest.MonkeyPa
     assert "".join(chunks) == "第一句。第二句！"
 
 
+def test_build_messages_attaches_images_to_last_user() -> None:
+    group_id = "test-vision"
+    pipeline.reset_group(group_id)
+    pipeline.remember_user(group_id, "tester", 1, "[图片]")
+    images = [{"base64": "QUJD", "mime": "image/png"}]
+
+    messages = pipeline.build_messages(group_id, 10000, images=images)
+    assert messages[-1]["role"] == "user"
+    assert messages[-1]["images"] == images
+    # 历史里不能出现第二份 base64，否则 prompt 会被反复撑大
+    assert all("images" not in message for message in messages[:-1])
+    pipeline.reset_group(group_id)
+
+
+def test_build_messages_without_images_has_no_image_key() -> None:
+    group_id = "test-noimage"
+    pipeline.reset_group(group_id)
+    pipeline.remember_user(group_id, "tester", 1, "你好")
+
+    messages = pipeline.build_messages(group_id, 10000)
+    assert all("images" not in message for message in messages)
+    pipeline.reset_group(group_id)

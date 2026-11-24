@@ -337,3 +337,78 @@ async def test_ollama_list_models_error() -> None:
     provider._client = _FakeOllamaClient(error=ConnectionError("refused"))
     with pytest.raises(LLMError, match="refused"):
         await provider.list_models()
+
+# ---------------------------------------------------------------------------
+# 多模态
+
+# ---------------------------------------------------------------------------
+# 多模态
+# ---------------------------------------------------------------------------
+
+
+def test_supports_vision_by_model_name() -> None:
+    provider = _openai({"model": ["qwen2.5-vl-7b"]})
+    assert provider.supports_vision("qwen2.5-vl-7b") is True
+    assert provider.supports_vision("qwen3.5-9b@q6_k") is False
+
+
+def test_supports_vision_override_wins() -> None:
+    forced = _openai({"vision": True})
+    assert forced.supports_vision("some-text-model") is True
+    disabled = _openai({"vision": False})
+    assert disabled.supports_vision("qwen2.5-vl-7b") is False
+
+
+def test_supports_vision_respects_global_switch(monkeypatch) -> None:
+    import bot_config as cfg
+
+    provider = _openai()
+    monkeypatch.setattr(cfg, "VISION_ENABLED", False)
+    assert provider.supports_vision("qwen2.5-vl-7b") is False
+
+
+async def test_openai_chat_sends_images_as_content_parts() -> None:
+    provider = _openai()
+    seen: dict = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "看到了"}}]})
+
+    await _install(provider, handler)
+    messages = [
+        {"role": "system", "content": "人设"},
+        {
+            "role": "user",
+            "content": "这是什么",
+            "images": [{"base64": "QUJD", "mime": "image/png"}],
+        },
+    ]
+    assert await provider.chat("m", messages) == "看到了"
+
+    sent = seen["body"]["messages"]
+    assert sent[0] == {"role": "system", "content": "人设"}
+    assert sent[1]["role"] == "user"
+    assert sent[1]["content"][0] == {"type": "text", "text": "这是什么"}
+    assert sent[1]["content"][1] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,QUJD"},
+    }
+
+
+async def test_ollama_chat_sends_images_field() -> None:
+    provider = _ollama()
+    fake = _FakeOllamaClient(_FakeResponse("看到了"))
+    provider._client = fake
+
+    messages = [
+        {
+            "role": "user",
+            "content": "看图",
+            "images": [{"base64": "QUJD", "mime": "image/png"}],
+        }
+    ]
+    assert await provider.chat("m", messages) == "看到了"
+    sent = fake.calls[0]["messages"][0]
+    assert sent["images"] == ["QUJD"]
+    assert "base64" not in sent

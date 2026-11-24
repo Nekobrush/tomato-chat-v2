@@ -52,6 +52,10 @@ FIELDS: list[dict[str, Any]] = [
      "help": "按上一条的字数线性增加停顿，例如 0.02 表示每个字多停 20 毫秒"},
     {"key": "SPLIT_DELAY_JITTER", "label": "分条随机浮动（秒）", "kind": "float", "min": 0, "max": 10, "step": 0.1,
      "help": "在算出的停顿上随机加减这么多秒，避免机器般均匀"},
+    {"key": "VISION_ENABLED", "label": "识别图片（多模态）", "kind": "bool",
+     "help": "只有当前模型支持看图时才生效；@ 机器人或回复机器人时必看，其他人发的图按水群概率随机看"},
+    {"key": "VISION_MAX_IMAGES", "label": "每条最多看几张图", "kind": "int", "min": 1, "max": 10},
+    {"key": "VISION_MAX_BYTES", "label": "单张图大小上限（字节）", "kind": "int", "min": 65536, "max": 33554432},
 ]
 
 FIELD_BY_KEY: dict[str, dict[str, Any]] = {field["key"]: field for field in FIELDS}
@@ -196,6 +200,15 @@ def _coerce(field: dict[str, Any], value: Any) -> Any:
         except re.error as exc:
             raise ConfigError(f"{field['label']} 不是合法的正则：{exc}") from exc
         return pattern
+    if kind == "bool":
+        if isinstance(value, bool):
+            return value
+        text = str(value).strip().lower()
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        if text in {"0", "false", "no", "off", ""}:
+            return False
+        raise ConfigError(f"{field['label']} 只能是开或关")
     if kind == "prob":
         field = {**field, "min": 0, "max": 1}
         return _as_number(field, value)

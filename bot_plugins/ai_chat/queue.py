@@ -16,14 +16,14 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageSegment
 from nonebot.log import logger
 
 import bot_config as cfg
 
-from . import pipeline
+from . import pipeline, vision
 from .errors import LLMError
 
 
@@ -38,6 +38,7 @@ class Pending:
     self_id: int
     occurred_at: int
     count: int = 1
+    images: list[str] = field(default_factory=list)
 
 
 class GroupQueue:
@@ -67,13 +68,20 @@ def _merge_text(current: str, incoming: str) -> str:
     return "…" + merged[-limit:]
 
 
-async def enqueue(bot: Bot, event: GroupMessageEvent, text: str) -> None:
+async def enqueue(
+    bot: Bot,
+    event: GroupMessageEvent,
+    text: str,
+    *,
+    images: list[str] | None = None,
+) -> None:
     """把这次 @ 变成一条待办；同一个人连发只占一条。"""
     from .runtime import nickname
 
     queue = _queue(str(event.group_id))
     occurred_at = int(event.time) * 1000 if event.time else int(time.time() * 1000)
     user_id = int(event.user_id)
+    incoming = list(images or [])
 
     existing = queue.items.get(user_id)
     if existing is None:
@@ -84,12 +92,16 @@ async def enqueue(bot: Bot, event: GroupMessageEvent, text: str) -> None:
             message_id=int(event.message_id),
             self_id=int(event.self_id),
             occurred_at=occurred_at,
+            images=incoming,
         )
     else:
         existing.text = _merge_text(existing.text, text)
         existing.message_id = int(event.message_id)
         existing.occurred_at = occurred_at
         existing.count += 1
+        # 合并时也合并图片，但总量受配置限制，避免一次塞十几张图
+        limit = max(1, int(cfg.VISION_MAX_IMAGES))
+        existing.images = (existing.images + incoming)[-limit:]
 
     if queue.task is None or queue.task.done():
         queue.task = asyncio.create_task(_drain(queue, bot))
@@ -124,12 +136,14 @@ async def _drain(queue: GroupQueue, bot: Bot) -> None:
 
 async def _reply(bot: Bot, group_id: str, item: Pending) -> None:
     focus = pipeline.focus_hint(item.nickname, item.user_id, item.text, item.count)
+    parts = await vision.load_parts(item.images) if item.images else []
     try:
         messages = await pipeline.generate_reply(
             group_id,
             item.self_id,
             reply_id=item.message_id,
             focus=focus,
+            images=parts or None,
         )
     except LLMError as exc:
         logger.warning(f"[{group_id}] 生成回复失败：{exc}")

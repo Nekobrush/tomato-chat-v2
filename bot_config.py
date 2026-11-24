@@ -104,6 +104,36 @@ PRIVATE_CHAT_ENABLED = True       # 是否回应私聊
 ALLOW_PRIVATE_USERS = set()       # 留空=所有私聊用户；填 QQ 号则只回这些人
 PRIVATE_MEMORY_PREFIX = "private"  # 私聊记忆的键前缀，如 private:123456
 
+# ------------------------------- 多模态（看图） -------------------------------
+# 只有模型本身支持图片时才会真的把图发给它；不支持时退回纯文本行为。
+VISION_ENABLED = True             # 总开关
+VISION_MAX_IMAGES = 3             # 一条消息最多看几张图，多了忽略
+VISION_MAX_BYTES = 4 * 1024 * 1024  # 单张图的字节上限，超过就跳过
+# LM Studio / ollama 都不会主动声明"我支持图片"，所以按模型名判断。
+# 模型源里也可以写 "vision": true / false 强制指定。
+VISION_MODEL_PATTERNS = (
+    "vl",
+    "vision",
+    "visual",
+    "llava",
+    "minicpm-v",
+    "internvl",
+    "moondream",
+    "pixtral",
+    "gemma3",
+    "gemma-3",
+    "qwen2.5-vl",
+    "qwen3-vl",
+    "gpt-4o",
+    "gpt-4.1",
+    "o4-mini",
+    "claude",
+    "gemini",
+    "glm-4v",
+    "glm-4.1v",
+)
+
+
 # ------------------------------- 表情包 -------------------------------
 EMOTION_PIC_PATH = BASE_DIR / "resources" / "emotions"
 # 允许的情绪（与 resources/emotions 下的文件夹名一致）
@@ -152,6 +182,14 @@ import json  # noqa: E402  (放在最后，避免打乱上面的配置阅读顺�
 
 _WEBUI_OVERLAY = BASE_DIR / "webui_config.json"
 
+
+def _as_bool(value) -> bool:
+    """JSON 里的 true/false 或 "true"/"false" 都能认，避免 bool("false") 的坑。"""
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "是"}
+
+
 _OVERLAY_SCALARS = {
     "DEFAULT_SOURCE": str,
     "DEFAULT_MODEL_INDEX": int,
@@ -174,6 +212,9 @@ _OVERLAY_SCALARS = {
     "SPLIT_DELAY_BASE": float,
     "SPLIT_DELAY_PER_CHAR": float,
     "SPLIT_DELAY_JITTER": float,
+    "VISION_ENABLED": _as_bool,
+    "VISION_MAX_IMAGES": int,
+    "VISION_MAX_BYTES": int,
 }
 
 

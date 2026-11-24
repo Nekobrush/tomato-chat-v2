@@ -7,7 +7,7 @@ import asyncio
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageSegment
 from nonebot.log import logger
 
-from . import pipeline
+from . import pipeline, vision
 from .errors import LLMError
 
 
@@ -35,18 +35,22 @@ async def chat_and_reply(
     text: str,
     *,
     silent: bool = False,
+    images: list[str] | None = None,
 ) -> None:
     """调模型 → 发送（调用方需持有该群的锁）。
 
     用户消息已经由调用方在取锁之前记入记忆，这里只负责生成与发送，
-    这样排队的消息也能保留真实的先后与时间戳。
+    这样排队的消息也能保留真实的先后与时间戳。``images`` 是图片的原始来源
+    （url / base64:// / 路径），真正下载放到锁内做，避免白下载用不上的图。
     """
     group_id = str(event.group_id)
+    parts = await vision.load_parts(images) if images else []
     try:
         messages = await pipeline.generate_reply(
             group_id,
             event.self_id,
             reply_id=event.message_id,
+            images=parts or None,
         )
     except LLMError as exc:
         logger.warning(f"[{group_id}] 生成回复失败：{exc}")

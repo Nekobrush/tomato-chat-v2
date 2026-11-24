@@ -35,6 +35,34 @@ def _snippet(response: httpx.Response, limit: int = 200) -> str:
     return text[:limit]
 
 
+def _format_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把带 ``images`` 的消息转成 OpenAI 的 content parts 格式。"""
+    formatted: list[dict[str, Any]] = []
+    for message in messages:
+        images = message.get("images") or []
+        if not images:
+            formatted.append(
+                {
+                    "role": message.get("role", "user"),
+                    "content": message.get("content", ""),
+                }
+            )
+            continue
+        parts: list[dict[str, Any]] = [
+            {"type": "text", "text": str(message.get("content") or "")}
+        ]
+        for image in images:
+            mime = image.get("mime") or "image/png"
+            parts.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{image['base64']}"},
+                }
+            )
+        formatted.append({"role": message.get("role", "user"), "content": parts})
+    return formatted
+
+
 class OpenAICompatibleProvider(ChatProvider):
     kind = "openai"
     kind_label = "OpenAI 兼容"
@@ -106,10 +134,10 @@ class OpenAICompatibleProvider(ChatProvider):
             raise LLMError(f"{self.base_url} 没有返回任何模型喵")
         return models
 
-    async def chat(self, model: str, messages: list[dict[str, str]]) -> str:
+    async def chat(self, model: str, messages: list[dict[str, Any]]) -> str:
         payload: dict[str, Any] = {
             "model": model,
-            "messages": messages,
+            "messages": _format_messages(messages),
             "stream": False,
             **self.request_params,
         }

@@ -12,6 +12,21 @@ from ..errors import LLMError
 from .base import ChatProvider, GenerationParams, log_usage
 
 
+def _format_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """ollama 的图片放在消息的 ``images`` 字段里（裸 base64，不带 data: 前缀）。"""
+    formatted: list[dict[str, Any]] = []
+    for message in messages:
+        item: dict[str, Any] = {
+            "role": message.get("role", "user"),
+            "content": message.get("content", ""),
+        }
+        images = message.get("images") or []
+        if images:
+            item["images"] = [image.get("base64", "") for image in images]
+        formatted.append(item)
+    return formatted
+
+
 class OllamaProvider(ChatProvider):
     kind = "ollama"
     kind_label = "ollama"
@@ -57,12 +72,12 @@ class OllamaProvider(ChatProvider):
             raise LLMError(f"{self.url} 里没有已安装的模型喵")
         return models
 
-    async def chat(self, model: str, messages: list[dict[str, str]]) -> str:
+    async def chat(self, model: str, messages: list[dict[str, Any]]) -> str:
         started = time.perf_counter()
         try:
             response = await self._client.chat(
                 model=model,
-                messages=messages,
+                messages=_format_messages(messages),
                 options=self.options,
             )
         except Exception as exc:  # noqa: BLE001

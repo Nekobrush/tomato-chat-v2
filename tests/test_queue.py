@@ -56,7 +56,7 @@ def _fast_queue(monkeypatch: pytest.MonkeyPatch):
 
 
 def _fake_generate(monkeypatch: pytest.MonkeyPatch, calls: list[str | None]) -> None:
-    async def fake(group_id, bot_id, reply_id=None, *, focus=None):
+    async def fake(group_id, bot_id, reply_id=None, *, focus=None, images=None):
         calls.append(focus)
         return [Message("好的喵")]
 
@@ -118,7 +118,7 @@ async def test_stale_pending_is_dropped(
 async def test_generation_error_falls_back_to_tip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def boom(group_id, bot_id, reply_id=None, *, focus=None):
+    async def boom(group_id, bot_id, reply_id=None, *, focus=None, images=None):
         raise LLMError("模型炸了")
 
     monkeypatch.setattr(pipeline, "generate_reply", boom)

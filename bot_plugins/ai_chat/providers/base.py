@@ -75,6 +75,23 @@ class ChatProvider(ABC):
         key = self.spec.get("api_key")
         return str(key).strip() if key else ""
 
+    def supports_vision(self, model: str | None = None) -> bool:
+        """这个模型能不能看图。
+
+        模型源里写 ``"vision": true/false`` 时以它为准；否则按模型名猜——
+        LM Studio 和 ollama 都不会主动声明多模态能力，只能靠名字里的
+        `vl` / `vision` / `llava` 这类关键字。
+        """
+        if not bool(getattr(cfg, "VISION_ENABLED", True)):
+            return False
+        override = self.spec.get("vision")
+        if isinstance(override, bool):
+            return override
+        name = (model or "").lower()
+        return any(
+            token in name for token in getattr(cfg, "VISION_MODEL_PATTERNS", ())
+        )
+
     def describe(self) -> str:
         return f"{self.label}（{self.kind_label}）"
 
@@ -84,8 +101,12 @@ class ChatProvider(ABC):
         """返回该模型源当前可用的模型名，用于 `chatset ss`。"""
 
     @abstractmethod
-    async def chat(self, model: str, messages: list[dict[str, str]]) -> str:
-        """生成一次回复，返回非空文本；失败抛 `LLMError`。"""
+    async def chat(self, model: str, messages: list[dict[str, Any]]) -> str:
+        """生成一次回复，返回非空文本；失败抛 `LLMError`。
+
+        ``messages`` 里最后一条 user 消息可能带 ``images`` 字段
+        （``[{"base64": ..., "mime": ...}]``），由各 provider 自己转成对应协议。
+        """
 
     async def aclose(self) -> None:
         """释放底层连接，默认什么都不做。"""
