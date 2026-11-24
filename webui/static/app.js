@@ -759,7 +759,7 @@
   /* -------------------------------------------------------- 视图：设置 */
 
   const SETTING_GROUPS = [
-    { title: "基本", keys: ["AI_NAME", "ALLOW_GROUPS"], desc: "机器人叫什么、允许在哪些群说话。" },
+    { title: "基本", keys: ["ALLOW_GROUPS"], desc: "机器人允许在哪些群说话（AI 名字在「人格与提示词」里改）。" },
     { title: "模型", keys: ["MODELS", "DEFAULT_SOURCE", "DEFAULT_MODEL_INDEX"], desc: "ollama 和 OpenAI 兼容（LM Studio / DeepSeek / OneAPI）都可以。" },
     { title: "生成参数", keys: ["GLOBAL_CTX", "PREDICT", "TEMPERATURE", "TOP_K", "TOP_P", "REPEAT_PENALTY", "REQUEST_TIMEOUT"], desc: "决定回复的长度和风格，改完立刻生效。" },
     { title: "行为概率", keys: ["DEFAULT_WATER_PROBABILITY", "SEND_IMAGE_PROBABILITY", "REPLY_PROBABILITY", "NORMAL_USER_MAX_WATER_PROBABILITY", "MERGE_MAX_LEN", "RESP_LEN_LIMIT"], desc: "水群、发图、引用回复和合并消息的规则。" },
@@ -943,7 +943,7 @@
   const PROMPT_GROUPS = [
     {
       title: "人格设定",
-      keys: ["system", "example_user", "example_assistant"],
+      keys: ["ai_name", "system", "example_user", "example_assistant"],
       desc: "模型是谁、怎么说话。人设写进每轮请求的最前面，改完下一句回复就会变。",
     },
     {
@@ -964,9 +964,11 @@
 
   function promptControl(field, value) {
     const key = esc(field.key);
-    const rows = field.rows || 3;
     const text = Array.isArray(value) ? value.join("\n") : String(value ?? "");
-    return `<textarea data-prompt="${key}" rows="${rows}" spellcheck="false">${esc(text)}</textarea>`;
+    if (field.kind === "str") {
+      return `<input type="text" data-prompt="${key}" value="${esc(text)}" maxlength="24" autocomplete="off">`;
+    }
+    return `<textarea data-prompt="${key}" rows="${field.rows || 3}" spellcheck="false">${esc(text)}</textarea>`;
   }
 
   function viewPrompts() {

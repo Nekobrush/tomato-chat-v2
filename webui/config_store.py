@@ -19,8 +19,8 @@ OVERLAY_NAME = "webui_config.json"
 
 # 网页表单里展示的字段。kind 决定输入控件和校验方式。
 FIELDS: list[dict[str, Any]] = [
-    {"key": "AI_NAME", "label": "AI 名字", "kind": "str",
-     "help": "提示词里的 {ai_name} 会替换成这个名字，保存后下一条回复就生效"},
+    {"key": "AI_NAME", "label": "AI 名字", "kind": "str", "hidden": True,
+     "help": "在「人格与提示词」里修改；提示词里的 {ai_name} 会替换成这个名字"},
     {"key": "ALLOW_GROUPS", "label": "允许的群号", "kind": "groups",
      "help": "严格白名单：不在列表里的群不会收到任何回复"},
     {"key": "DEFAULT_SOURCE", "label": "默认模型源", "kind": "source"},

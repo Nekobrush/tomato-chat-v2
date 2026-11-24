@@ -265,21 +265,34 @@ def test_prompts_roundtrip_and_validation(client, sandbox, monkeypatch):
     data = client.get("/api/prompts").json()
     assert data["fields"] and "system" in data["values"]
     assert data["file"] == "webui_prompts.json"
+    assert data["values"]["ai_name"] == "tomato"
+    assert "ai_name" not in data["defaults"]
 
     values = dict(data["values"])
     values["system"] = values["system"] + "\n额外设定喵。"
+    values["ai_name"] = "mikan"
     saved = client.post("/api/prompts", json={"values": values})
 
     assert saved.status_code == 200
     assert "额外设定喵" in saved.json()["values"]["system"]
     assert "额外设定喵" in prompts.SYSTEM_PROMPT
+    assert "mikan" in prompts.SYSTEM_PROMPT
     assert (sandbox / "webui_prompts.json").exists()
+    stored = json.loads((sandbox / "webui_prompts.json").read_text(encoding="utf-8"))
+    assert "ai_name" not in stored
+    overlay = json.loads((sandbox / config_store.OVERLAY_NAME).read_text(encoding="utf-8"))
+    assert overlay["AI_NAME"] == "mikan"
 
     bad = dict(values)
     bad["system"] = ""
     assert client.post("/api/prompts", json={"values": bad}).status_code == 400
 
+    bad_name = dict(values)
+    bad_name["ai_name"] = "   "
+    assert client.post("/api/prompts", json={"values": bad_name}).status_code == 400
+
     reset = client.post("/api/prompts/reset")
     assert reset.status_code == 200
     assert not (sandbox / "webui_prompts.json").exists()
     assert "额外设定喵" not in prompts.SYSTEM_PROMPT
+    assert reset.json()["values"]["ai_name"] == "mikan"

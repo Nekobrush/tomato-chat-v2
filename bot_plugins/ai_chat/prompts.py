@@ -68,6 +68,9 @@ DEFAULT_REQFAIL_TIPS = (
 
 DEFAULT_EMPTY_REPLY = "喵？"
 
+# AI 名字单独存放（在 bot_config 的 webui_config.json 覆盖里），但展示在人格页
+AI_NAME_KEY = "ai_name"
+
 # 可编辑字段的默认值（顺序即 WebUI 里展示的顺序）
 DEFAULTS: dict[str, Any] = {
     "system": DEFAULT_SYSTEM,
@@ -90,6 +93,13 @@ class PromptError(ValueError):
 
 # WebUI 里每个字段的展示信息（顺序即页面顺序）
 FIELDS: list[dict[str, Any]] = [
+    {
+        "key": "ai_name",
+        "label": "AI 名字",
+        "kind": "str",
+        "rows": 1,
+        "help": "替代人设里的 {ai_name}，也用于日志和「关于」页。属于人格设定，保存在「模型与设置」的配置里。",
+    },
     {
         "key": "system",
         "label": "人设（system 提示词）",
@@ -185,6 +195,7 @@ def defaults() -> dict[str, Any]:
 def current() -> dict[str, Any]:
     """默认值 + 文件覆盖，用于页面展示。"""
     merged = defaults()
+    merged["ai_name"] = cfg.AI_NAME
     try:
         raw = json.loads(PROMPTS_FILE.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -193,7 +204,7 @@ def current() -> dict[str, Any]:
         return merged
     if isinstance(raw, dict):
         for key in merged:
-            if key in raw:
+            if key in raw and key != "ai_name":
                 merged[key] = raw[key]
     return merged
 
@@ -298,11 +309,11 @@ def save(payload: dict[str, Any]) -> dict[str, Any]:
         encoding="utf-8",
     )
     apply(data)
-    return data
+    return current()
 
 
 def reset() -> dict[str, Any]:
-    """删除覆盖文件并恢复默认值。"""
+    """删除覆盖文件并恢复默认值（AI 名字不属于提示词文件，保持不动）。"""
     try:
         PROMPTS_FILE.unlink()
     except FileNotFoundError:
@@ -311,7 +322,7 @@ def reset() -> dict[str, Any]:
         raise PromptError(f"删除 {PROMPTS_FILE.name} 失败：{exc}") from exc
     data = defaults()
     apply(data)
-    return data
+    return current()
 
 
 reload()

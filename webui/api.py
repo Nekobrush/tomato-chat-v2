@@ -288,11 +288,22 @@ async def get_prompts() -> dict[str, Any]:
 @router.post("/prompts")
 async def save_prompts(body: PromptsIn) -> dict[str, Any]:
     prompts = _prompts()
+    values = dict(body.values)
+    name = values.pop(prompts.AI_NAME_KEY, None)
     try:
-        values = prompts.save(body.values)
+        if name is not None:
+            name = str(name).strip()
+            if not name:
+                raise prompts.PromptError("AI 名字不能为空喵。")
+            if len(name) > 24:
+                raise prompts.PromptError("AI 名字最多 24 个字喵。")
+            config_store.save({"AI_NAME": name})
+        merged = prompts.save(values)
     except prompts.PromptError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"values": values, "defaults": prompts.defaults(), "fields": prompts.FIELDS}
+    except config_store.ConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"values": merged, "defaults": prompts.defaults(), "fields": prompts.FIELDS}
 
 
 @router.post("/prompts/reset")
