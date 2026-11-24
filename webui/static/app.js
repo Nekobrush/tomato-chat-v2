@@ -20,6 +20,8 @@
     memoryGroup: null,
     chat: [],
     chatBusy: false,
+    chatImages: [],
+    dragDepth: 0,
     logs: [],
     logAuto: true,
     booted: false,
@@ -684,14 +686,20 @@
     const status = state.status;
     return `
       <div class="chat-layout">
-        <div class="chat-column">
+        <div class="chat-column" id="chat-drop">
           <div id="chat-scroll" class="chat" role="log" aria-live="polite"></div>
+          <div id="chat-drop-hint" class="chat-drop-hint"><span>松开就加到这条消息里</span></div>
           <form id="composer" class="composer" autocomplete="off">
-            <textarea id="chat-text" rows="2" maxlength="500" placeholder="和 tomato 说点什么…（Enter 发送，Shift+Enter 换行）" aria-label="试聊内容"></textarea>
+            <div id="chat-attachments" class="attachment-list"></div>
+            <textarea id="chat-text" rows="2" maxlength="500" placeholder="和 tomato 说点什么…（Enter 发送，Shift+Enter 换行，图片可直接拖进来）" aria-label="试聊内容"></textarea>
             <div class="composer-bottom">
-              <span class="hint">试聊用独立记忆，不会发到 QQ，也不会影响群聊上下文。</span>
-              <button class="primary" type="submit">发送</button>
+              <span class="hint">试聊用独立记忆，不会发到 QQ，也不会影响群聊上下文。图片可以拖进来或粘贴。</span>
+              <span class="composer-actions">
+                <button type="button" class="ghost" data-action="chat-pick-image">加图片</button>
+                <button class="primary" type="submit">发送</button>
+              </span>
             </div>
+            <input id="chat-file" type="file" accept="image/*" multiple hidden>
             <div id="chat-result" class="composer-result"></div>
           </form>
         </div>
@@ -699,6 +707,7 @@
           <h3>本轮信息</h3>
           <div class="status-row"><span class="label">模型</span><span class="value mono">${esc(status.model?.model || "—")}</span></div>
           <div class="status-row"><span class="label">模型源</span><span class="value">${esc(status.model?.label || "—")}</span></div>
+          <div class="status-row"><span class="label">看图</span><span class="value">${status.model?.vision ? '<span class="badge ok">支持</span>' : '<span class="badge">不支持</span>'}</span></div>
           <div class="status-row"><span class="label">记忆</span><span class="value">${num(state.memory.length)} 条</span></div>
           <h3 style="margin-top:18px">最近的情绪</h3>
           <div id="chat-tags" class="msg-tags"><span class="hint">还没有回复</span></div>
@@ -711,13 +720,92 @@
       </div>`;
   }
 
+  function imageLimitBytes() {
+    const value = Number(state.config?.VISION_MAX_BYTES);
+    return Number.isFinite(value) && value > 0 ? value : 4 * 1024 * 1024;
+  }
+
+  function imageLimitCount() {
+    const value = Number(state.config?.VISION_MAX_IMAGES);
+    return Number.isFinite(value) && value > 0 ? value : 3;
+  }
+
+  function readImageFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("读取图片失败"));
+      reader.onload = () => {
+        const dataUrl = String(reader.result || "");
+        const comma = dataUrl.indexOf(",");
+        if (comma < 0) {
+          reject(new Error("读取图片失败"));
+          return;
+        }
+        resolve({
+          dataUrl,
+          base64: dataUrl.slice(comma + 1),
+          mime: (file.type || "image/png").toLowerCase(),
+          name: file.name || "image",
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function addChatFiles(fileList) {
+    const files = Array.from(fileList || []).filter((file) => file && String(file.type || "").startsWith("image/"));
+    if (!files.length) return;
+    const limit = imageLimitBytes();
+    const max = imageLimitCount();
+    for (const file of files) {
+      if (state.chatImages.length >= max) {
+        toast(`一条消息最多 ${max} 张图`, "error");
+        break;
+      }
+      if (file.size > limit) {
+        toast(`${file.name || "图片"} 太大（上限 ${Math.round(limit / 1024 / 1024)} MB）`, "error");
+        continue;
+      }
+      try {
+        state.chatImages.push(await readImageFile(file));
+      } catch (err) {
+        toast(err.message || "图片读取失败", "error");
+      }
+    }
+    renderChatAttachments();
+  }
+
+  function renderChatAttachments() {
+    const box = $("#chat-attachments");
+    if (!box) return;
+    if (!state.chatImages.length) {
+      box.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    box.hidden = false;
+    box.innerHTML = state.chatImages
+      .map(
+        (image, index) => `
+        <figure class="attachment">
+          <img src="${image.dataUrl}" alt="${esc(image.name || "图片")}">
+          <button type="button" class="attachment-remove" data-action="chat-remove-image" data-index="${index}" aria-label="移除图片">×</button>
+        </figure>`,
+      )
+      .join("");
+  }
+
   function chatMessage(role, text, extra = {}) {
     const sent = role === "user";
+    const images = (extra.images || [])
+      .map((image) => `<img class="msg-image" src="${image.dataUrl}" alt="附图">`)
+      .join("");
     return `
       <div class="msg ${sent ? "sent" : "bot"}">
         <span class="avatar">${sent ? "我" : "🍅"}</span>
         <div class="msg-body">
           <div class="msg-head"><strong>${sent ? "你" : "tomato"}</strong><span>${extra.time || ""}</span></div>
+          ${images ? `<div class="msg-images">${images}</div>` : ""}
           <div class="bubble">${esc(text)}</div>
           ${extra.tags ? `<div class="msg-tags">${extra.tags}</div>` : ""}
         </div>
@@ -734,6 +822,7 @@
         .map((message) =>
           chatMessage(message.role, message.text, {
             time: message.time || "",
+            images: message.images || [],
             tags: (message.emotions || []).map((emotion) => `<span class="badge accent">${esc(emotion)}</span>`).join("") +
               (message.image ? `<span class="badge">附带表情包</span>` : ""),
           }),
@@ -775,9 +864,13 @@
 
   async function sendChat(text) {
     if (state.chatBusy) return;
+    const images = state.chatImages.slice();
+    if (!text && !images.length) return;
     state.chatBusy = true;
     const now = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-    state.chat.push({ role: "user", text, time: now });
+    state.chat.push({ role: "user", text: text || "[图片]", time: now, images });
+    state.chatImages = [];
+    renderChatAttachments();
     renderChatMessages();
     const result = $("#chat-result");
     if (result) {
@@ -785,7 +878,10 @@
       result.classList.remove("error");
     }
     try {
-      const data = await api("/chat", { method: "POST", body: JSON.stringify({ text }) });
+      const data = await api("/chat", {
+        method: "POST",
+        body: JSON.stringify({ text, images: images.map(({ base64, mime }) => ({ base64, mime })) }),
+      });
       state.chat.push({ role: "bot", text: data.reply, emotions: data.emotions || [], image: data.has_image });
       if (result) result.textContent = "";
       await loadStatus();
@@ -1463,12 +1559,47 @@
 
     $("#view").addEventListener("change", (event) => {
       const target = event.target;
+      if (target.id === "chat-file") {
+        addChatFiles(target.files);
+        target.value = "";
+        return;
+      }
       if (target.matches('[data-action="water-slider"]')) {
         // 松手才提交，拖动过程中只更新显示
         patchGroup(state.groupId, { water_probability: Number(target.value) });
         return;
       }
       if (target.matches("[data-key]") || target.closest("#models-editor")) markDirty();
+    });
+
+    // 拖放 / 粘贴图片：只在试聊视图生效，挂在 document 上，页面重绘也不会失效
+    document.addEventListener("dragover", (event) => {
+      if (state.view !== "chat") return;
+      const zone = $("#chat-drop");
+      if (!zone || !zone.contains(event.target)) return;
+      event.preventDefault();
+      zone.classList.add("dragging");
+    });
+    document.addEventListener("dragleave", (event) => {
+      if (state.view !== "chat") return;
+      const zone = $("#chat-drop");
+      if (!zone) return;
+      if (!zone.contains(event.relatedTarget)) zone.classList.remove("dragging");
+    });
+    document.addEventListener("drop", (event) => {
+      if (state.view !== "chat") return;
+      const zone = $("#chat-drop");
+      if (!zone || !zone.contains(event.target)) return;
+      event.preventDefault();
+      zone.classList.remove("dragging");
+      addChatFiles(event.dataTransfer?.files);
+    });
+    document.addEventListener("paste", (event) => {
+      if (state.view !== "chat") return;
+      const files = Array.from(event.clipboardData?.files || []);
+      if (!files.length) return;
+      event.preventDefault();
+      addChatFiles(files);
     });
 
     // 顶栏的「自动刷新」勾选框：事件挂在顶层容器上，重绘内部节点不会丢监听
@@ -1511,7 +1642,7 @@
       event.preventDefault();
       const input = $("#chat-text");
       const text = input.value.trim();
-      if (!text) return;
+      if (!text && !state.chatImages.length) return;
       input.value = "";
       sendChat(text);
     });
@@ -1632,6 +1763,17 @@
       case "chat-reset":
         resetChat();
         break;
+      case "chat-pick-image":
+        $("#chat-file")?.click();
+        break;
+      case "chat-remove-image": {
+        const index = Number(element.dataset.index);
+        if (Number.isInteger(index)) {
+          state.chatImages.splice(index, 1);
+          renderChatAttachments();
+        }
+        break;
+      }
       case "about": {
         const about = $("#about-dialog");
         $("#about-version").textContent = `v${state.status?.version || "1.0.0"}`;

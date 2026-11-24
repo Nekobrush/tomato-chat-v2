@@ -295,3 +295,53 @@ def test_prompts_roundtrip_and_validation(client, sandbox, monkeypatch):
     assert not (sandbox / "webui_prompts.json").exists()
     assert "额外设定喵" not in prompts.SYSTEM_PROMPT
     assert reset.json()["values"]["ai_name"] == "tomato"
+
+
+def test_chat_accepts_dragged_images(client, monkeypatch):
+    from bot_plugins.ai_chat import pipeline
+
+    captured: dict = {}
+
+    async def fake_chat(messages, **_kwargs):
+        captured["messages"] = messages
+        return "看到了喵--*happy*--"
+
+    monkeypatch.setattr(pipeline.llm, "chat", fake_chat)
+    monkeypatch.setattr(type(pipeline.llm), "supports_vision", property(lambda self: True))
+    pipeline.reset_group(webui_api.WEBUI_TEST_GROUP)
+
+    image = {"base64": "QUJD", "mime": "image/png"}
+    response = client.post("/api/chat", json={"text": "", "images": [image]})
+
+    assert response.status_code == 200
+    assert captured["messages"][-1]["images"] == [image]
+    records = client.get(f"/api/groups/{webui_api.WEBUI_TEST_GROUP}/memory").json()["records"]
+    assert records[0]["content"].endswith("[图片]")
+    client.post("/api/chat/reset")
+
+
+def test_chat_rejects_images_without_vision_model(client, monkeypatch):
+    from bot_plugins.ai_chat import pipeline
+
+    monkeypatch.setattr(type(pipeline.llm), "supports_vision", property(lambda self: False))
+    response = client.post("/api/chat", json={"images": [{"base64": "QUJD", "mime": "image/png"}]})
+
+    assert response.status_code == 400
+    assert "多模态" in response.json()["detail"]
+
+
+def test_chat_rejects_bad_images(client):
+    from bot_plugins.ai_chat import pipeline
+
+    pipeline.reset_group(webui_api.WEBUI_TEST_GROUP)
+
+    empty = client.post("/api/chat", json={"text": ""})
+    assert empty.status_code == 400
+
+    bad_mime = client.post(
+        "/api/chat", json={"images": [{"base64": "QUJD", "mime": "application/pdf"}]}
+    )
+    assert bad_mime.status_code == 400
+
+    blank = client.post("/api/chat", json={"images": [{"base64": "", "mime": "image/png"}]})
+    assert blank.status_code == 400

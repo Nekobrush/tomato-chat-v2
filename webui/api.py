@@ -388,7 +388,37 @@ async def clear_memory(group_id: str) -> dict[str, Any]:
 
 
 class ChatIn(BaseModel):
-    text: str = Field(min_length=1, max_length=500)
+    text: str = Field(default="", max_length=500)
+    images: list[dict[str, str]] = Field(default_factory=list)
+
+
+_IMAGE_MIME = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"}
+
+
+def _validate_chat_images(images: list[dict[str, str]]) -> list[dict[str, str]]:
+    """校验网页拖进来的图片，返回规范化后的列表。"""
+    if not images:
+        return []
+    from bot_config import VISION_MAX_BYTES, VISION_MAX_IMAGES
+
+    if len(images) > VISION_MAX_IMAGES:
+        raise HTTPException(status_code=400, detail=f"一条消息最多 {VISION_MAX_IMAGES} 张图")
+    limit = max(VISION_MAX_BYTES, 1)
+    cleaned: list[dict[str, str]] = []
+    for index, item in enumerate(images, start=1):
+        payload = str(item.get("base64") or "").strip()
+        mime = str(item.get("mime") or "").strip().lower()
+        if not payload:
+            raise HTTPException(status_code=400, detail=f"第 {index} 张图没有数据")
+        if mime == "image/jpg":
+            mime = "image/jpeg"
+        if mime not in _IMAGE_MIME:
+            raise HTTPException(status_code=400, detail=f"第 {index} 张图格式不支持：{mime or '未知'}")
+        # base64 每 4 个字符还原 3 字节，留一点余量再比较
+        if len(payload) * 3 // 4 > limit:
+            raise HTTPException(status_code=400, detail=f"第 {index} 张图太大（上限 {limit // 1024} KB）")
+        cleaned.append({"base64": payload, "mime": mime})
+    return cleaned
 
 
 @router.post("/chat")
@@ -397,11 +427,21 @@ async def webui_chat(body: ChatIn) -> dict[str, Any]:
     from bot_plugins.ai_chat.text import extract_emotions
 
     pipeline = _pipeline()
+    images = _validate_chat_images(body.images)
+    text = body.text.strip()
+    if not text and not images:
+        raise HTTPException(status_code=400, detail="说点什么，或者拖一张图进来")
+    if images and not _llm().supports_vision:
+        raise HTTPException(
+            status_code=400,
+            detail="当前模型不支持看图：换一个多模态模型，或在「模型与设置 › 模型源」里把它的名字加进「能看图的模型」",
+        )
+
     group_id = WEBUI_TEST_GROUP
     async with pipeline.group_lock(group_id):
-        pipeline.remember_user(group_id, "网页访客", "webui", body.text)
+        pipeline.remember_user(group_id, "网页访客", "webui", text or "[图片]")
         try:
-            messages = await pipeline.generate_reply(group_id, 10000)
+            messages = await pipeline.generate_reply(group_id, 10000, images=images or None)
         except LLMError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
