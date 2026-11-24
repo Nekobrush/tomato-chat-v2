@@ -101,8 +101,8 @@ python launcher.py --port 9000     # 临时换端口
 | `MEMORY_TOKEN_BUDGET` | 每群记忆的 token 预算，`0` = 按 `GLOBAL_CTX` 的 35% 自动估算；长句群会自动少留几条 |
 | `MEMORY_PERSIST_ENABLED` | 记忆持久化：开启后每个会话一份 JSON（`data/memory/`），重启不再失忆；默认关闭 |
 | `WEBUI_SESSION_GROUP` / `WEBUI_SESSION_BOT_ID` | 网页试聊用的虚拟会话键与「机器人 QQ 号」 |
-| `PENDING_DEBOUNCE` | 收到 @ 后先等多久（秒），把同一波连发合并成一条待办，默认 0.4 |
-| `PENDING_TTL` | 待办超过多少秒还没轮到就丢弃，避免回一句过时的话，默认 20 |
+| `PENDING_DEBOUNCE` | 收到 @ 后先等多久（秒），把同一波连发合并成一条待办，默认 0.4；按「一个人连打两句话的间隔」定 |
+| `PENDING_TTL` | 待办超过多少秒还没轮到就丢弃，避免回一句过时的话，默认 20；按「4–6 倍单条生成耗时」定 |
 | `PENDING_TEXT_LIMIT` | 同一个人的多条消息合并后最多保留多少字符，默认 200 |
 | `PRIVATE_CHAT_ENABLED` | 是否回应私聊，默认 `True` |
 | `ALLOW_PRIVATE_USERS` | 允许私聊的 QQ 号集合；**留空表示所有私聊用户**，填了就只回这些人 |

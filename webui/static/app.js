@@ -931,7 +931,7 @@
     { title: "基本", keys: ["ALLOW_GROUPS", "VISION_ENABLED", "VISION_MAX_IMAGES", "VISION_MAX_BYTES", "SPLIT_PATTERN", "SPLIT_MAX_CHARS", "SPLIT_DELAY_BASE", "SPLIT_DELAY_PER_CHAR", "SPLIT_DELAY_JITTER"], desc: "机器人允许在哪些群说话、看不看图片，以及把长回复切成多条气泡的规则（AI 名字在「人格与提示词」里改）。" },
     { title: "模型", keys: ["MODELS", "DEFAULT_SOURCE", "DEFAULT_MODEL_INDEX"], desc: "ollama 和 OpenAI 兼容（LM Studio / DeepSeek / OneAPI）都可以。" },
     { title: "生成参数", keys: ["GLOBAL_CTX", "PREDICT", "TEMPERATURE", "TOP_K", "TOP_P", "REPEAT_PENALTY", "REQUEST_TIMEOUT"], desc: "决定回复的长度和风格，改完立刻生效。" },
-    { title: "行为概率", keys: ["DEFAULT_WATER_PROBABILITY", "SEND_IMAGE_PROBABILITY", "REPLY_PROBABILITY", "NORMAL_USER_MAX_WATER_PROBABILITY", "MERGE_MAX_LEN", "RESP_LEN_LIMIT"], desc: "水群、发图、引用回复和合并消息的规则。" },
+    { title: "行为概率", keys: ["DEFAULT_WATER_PROBABILITY", "SEND_IMAGE_PROBABILITY", "REPLY_PROBABILITY", "NORMAL_USER_MAX_WATER_PROBABILITY", "PENDING_DEBOUNCE", "PENDING_TTL", "MERGE_MAX_LEN", "RESP_LEN_LIMIT"], desc: "水群、发图、引用回复和合并消息的规则。" },
     { title: "记忆", keys: ["MAX_MEMORY", "MEMORY_TOKEN_BUDGET", "MEMORY_PERSIST_ENABLED"], desc: "每个群保留多少条上下文、最多占多少 token；开启持久化后重启不再失忆。" },
   ];
 

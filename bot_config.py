@@ -107,6 +107,10 @@ MEMORY_STORE_PATH = BASE_DIR / "data" / "memory"
 # ------------------------------- 排队与合并 -------------------------------
 # 本地生成一条要几秒，生成期间别人再 @ 就不再各排一条：
 # 同一个人连发的消息合并成一条待办，不同的人各占一条，按顺序回复。
+# 这两个值没有普适的最优解，取决于你机器的生成速度：
+#   debounce 约等于“一个人连打两句话的间隔”，本地 0.3–0.5 秒即可；
+#   TTL 约等于“等 4–6 条回复还没轮到就过时了”，即 4–6 × 单条生成耗时
+#   （本地 1–4 秒/条 → 20 秒；云端更快可以调小）。
 PENDING_DEBOUNCE = 0.4     # 收到第一条后先等这么久，把同一波连发合并（秒）
 PENDING_TTL = 20.0         # 待办超过这么久还没轮到就丢弃（秒），别回过时的话
 PENDING_TEXT_LIMIT = 200   # 合并后的待办文本最多保留多长（字符）
@@ -224,6 +228,8 @@ _OVERLAY_SCALARS = {
     "MAX_MEMORY": int,
     "MEMORY_TOKEN_BUDGET": int,
     "MEMORY_PERSIST_ENABLED": _as_bool,
+    "PENDING_DEBOUNCE": float,
+    "PENDING_TTL": float,
     "MERGE_MAX_LEN": int,
     "RESP_LEN_LIMIT": int,
     "SPLIT_PATTERN": str,
