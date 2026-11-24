@@ -1599,7 +1599,9 @@
 
     // 拖放 / 粘贴图片：只在试聊视图生效，挂在 window 捕获阶段，
     // 这样从资源管理器拖文件进来不会触发浏览器「打开图片」的默认行为。
-    const chatZone = () => (state.view === "chat" ? $("#chat-drop") : null);
+    // 注意：试聊是 group 视图下的 chat 标签，不是 view === "chat"。
+    const inChatView = () => state.view === "group" && state.tab === "chat";
+    const chatZone = () => (inChatView() ? $("#chat-drop") : null);
     const dragPayload = (dataTransfer) => {
       const files = dataTransfer?.files ? Array.from(dataTransfer.files) : [];
       if (files.length) return { files, dataUrl: "" };
@@ -1668,7 +1670,7 @@
     });
 
     document.addEventListener("paste", (event) => {
-      if (state.view !== "chat") return;
+      if (!inChatView()) return;
       const files = Array.from(event.clipboardData?.files || []);
       if (!files.length) return;
       event.preventDefault();
