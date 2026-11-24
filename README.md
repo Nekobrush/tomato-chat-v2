@@ -196,6 +196,8 @@ WebUI 内嵌在机器人自己的 FastAPI 应用里，和 OneBot 反向 WS 共�
 http://127.0.0.1:8765/webui/
 ```
 
+![WebUI 概览](docs/screenshots/webui-overview.png)
+
 页面里的六个标签页：
 
 | 标签 | 能做什么 |
