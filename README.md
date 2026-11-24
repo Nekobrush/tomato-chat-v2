@@ -66,6 +66,12 @@ console window stops the bot.
 
 Open <http://127.0.0.1:8765/webui/> for the console.
 
+> **Stickers are not in git.** `resources/emotions/` holds ~372 MB of images and is ignored by
+> git, so a plain `git clone` gives you code only. If you want the ready-to-run package (code +
+> all 2613 stickers), download `tomato-chat-v2.0.0.zip` from
+> [Releases](https://github.com/Nekobrush/tomato-chat-v2/releases), unpack it and skip the clone.
+> Without stickers the bot still works, it just replies with text only.
+
 ## Connecting to QQ
 
 The bot speaks OneBot v11 over a reverse WebSocket:

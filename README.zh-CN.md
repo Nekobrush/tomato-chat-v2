@@ -162,6 +162,11 @@ MODELS = {
 
 ### 准备表情包
 
+> **表情包不在 git 里。** `resources/emotions/` 有 372 MB 图片，被 `.gitignore` 排除，所以
+> `git clone` 下来只有代码。想要开箱即用（代码 + 全部 2613 张表情包），到
+> [Releases](https://github.com/Nekobrush/tomato-chat-v2/releases) 下载
+> `tomato-chat-v2.0.0.zip` 解压即可，不用再 clone。没有表情包时机器人照常工作，只是只发文字。
+
 按情绪分文件夹放图片即可，支持 `.png/.jpg/.jpeg/.gif/.webp`：
 
 ```
