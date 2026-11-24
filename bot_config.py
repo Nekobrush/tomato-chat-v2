@@ -132,8 +132,6 @@ COMMANDS = {"chat", "chatsys", "chatcls", "chatstart", "chatstop", "chatset"}
 
 # 回复长度超过这个值时，往记忆里塞一条“缩短”提示
 RESP_LEN_LIMIT = 75
-# 每句话结尾必须带的口癖
-KEYWORDS = ("喵",)
 
 
 # ------------------------------- WebUI 覆盖 -------------------------------

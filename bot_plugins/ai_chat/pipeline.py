@@ -239,11 +239,6 @@ def pick_emotion_image(emotion: str | None) -> bytes | None:
 # 生成
 # ---------------------------------------------------------------------------
 
-def _needs_meow(text: str) -> bool:
-    trimmed = text.rstrip("。！？!?~～….,，、 \t\u3000")
-    return not trimmed.endswith(cfg.KEYWORDS)
-
-
 def _fit_length(text: str) -> str:
     """超长时在标点处截断，而不是让它写满 PREDICT 个 token。
 
@@ -266,8 +261,6 @@ def collect_tips(text: str, emotions: list[str]) -> str:
         tips.append(prompts.TIPS_NO_EMOTION)
     if len(text) > cfg.RESP_LEN_LIMIT:
         tips.append(prompts.TIPS_TOO_LONG)
-    if _needs_meow(text):
-        tips.append(prompts.TIPS_NO_MEOW)
     return "\n".join(tips)
 
 
@@ -276,7 +269,7 @@ def compose_message(text: str, emotions: list[str], reply_id: int | None) -> Mes
     if reply_id is not None and random.random() < cfg.REPLY_PROBABILITY:
         message.append(MessageSegment.reply(reply_id))
 
-    body = text or prompts.EMPTY_REPLY
+    body = prompts.decorate(text or prompts.EMPTY_REPLY)
     emotion = random.choice(emotions) if emotions else None
     image = pick_emotion_image(emotion)
 
@@ -309,12 +302,8 @@ async def generate_reply(
 
     # 先按生成时的长度判断，再截断：截断是补救，纠错提示仍然要留给下一轮
     too_long = len(cleaned) > cfg.RESP_LEN_LIMIT
-    missing_meow = bool(cleaned) and _needs_meow(cleaned)
 
     cleaned = _fit_length(cleaned)
-    # 缺「喵」是格式问题，就地补一个，不为它再生成一次（本地重试=延迟翻倍）
-    if missing_meow:
-        cleaned += "喵"
 
     # 记忆里保留带情绪标记的原文，方便模型学习格式
     store.append(group_id, "assistant", collapse_whitespace(without_emoji))
@@ -324,8 +313,6 @@ async def generate_reply(
         tips.append(prompts.TIPS_NO_EMOTION)
     if too_long:
         tips.append(prompts.TIPS_TOO_LONG)
-    if missing_meow:
-        tips.append(prompts.TIPS_NO_MEOW)
     if tips:
         store.append(group_id, "system", "\n".join(tips), mark=TIP_MARK)
 

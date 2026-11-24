@@ -4,6 +4,7 @@ import pytest
 
 import bot_config as cfg
 import bot_plugins.ai_chat.pipeline as pipeline
+from bot_plugins.ai_chat import prompts
 from bot_plugins.ai_chat.model import LLMError
 
 
@@ -65,21 +66,20 @@ async def test_generate_reply_propagates_error(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_collect_tips() -> None:
-    assert pipeline.collect_tips("你好喵", ["happy"]) == ""
-    assert "情绪" in pipeline.collect_tips("你好喵", [])
-    assert "喵" in pipeline.collect_tips("你好", ["happy"])
+    assert pipeline.collect_tips("你好", ["happy"]) == ""
+    assert "情绪" in pipeline.collect_tips("你好", [])
     assert "太长" in pipeline.collect_tips("喵" * (cfg.RESP_LEN_LIMIT + 1), ["happy"])
 
 
 def test_compose_with_image(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pipeline, "pick_emotion_image", lambda emotion: b"fake-image")
     monkeypatch.setattr(pipeline.random, "random", lambda: 0.0)
-    message = pipeline.compose_message("你好喵", ["happy"], reply_id=7)
+    message = pipeline.compose_message("你好", ["happy"], reply_id=7)
     types = [segment.type for segment in message]
     assert "reply" in types
     assert "image" in types
     assert "text" in types
-    assert message.extract_plain_text() == "你好喵"
+    assert message.extract_plain_text() == "你好"
 
 
 def test_compose_without_image(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -87,7 +87,16 @@ def test_compose_without_image(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pipeline.random, "random", lambda: 0.99)
     message = pipeline.compose_message("", [], reply_id=None)
     assert [segment.type for segment in message] == ["text"]
-    assert message.extract_plain_text() == "喵？"
+    assert message.extract_plain_text() == "嗯？"
+
+
+def test_compose_applies_prefix_and_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pipeline, "pick_emotion_image", lambda emotion: None)
+    monkeypatch.setattr(pipeline.random, "random", lambda: 0.99)
+    monkeypatch.setattr(prompts, "MESSAGE_PREFIX", "【tomato】")
+    monkeypatch.setattr(prompts, "MESSAGE_SUFFIX", "（喵）")
+    message = pipeline.compose_message("你好", ["happy"], reply_id=None)
+    assert message.extract_plain_text() == "【tomato】你好（喵）"
 
 
 def test_format_user_message() -> None:

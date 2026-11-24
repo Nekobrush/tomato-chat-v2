@@ -990,12 +990,12 @@
   const PROMPT_GROUPS = [
     {
       title: "人格设定",
-      keys: ["ai_name", "system", "example_user", "example_assistant"],
-      desc: "模型是谁、怎么说话。人设写进每轮请求的最前面，改完下一句回复就会变。",
+      keys: ["ai_name", "system", "example_user", "example_assistant", "message_prefix", "message_suffix"],
+      desc: "模型是谁、怎么说话，以及每条消息自动加的前后缀。人设写进每轮请求的最前面，改完下一句回复就会变。",
     },
     {
       title: "纠正提示",
-      keys: ["tip_no_emotion", "tip_too_long", "tip_no_meow"],
+      keys: ["tip_no_emotion", "tip_too_long"],
       desc: "回复不合要求时，下一次生成会看到其中一条提醒（只保留最新一条）。",
     },
     {
@@ -1013,7 +1013,8 @@
     const key = esc(field.key);
     const text = Array.isArray(value) ? value.join("\n") : String(value ?? "");
     if (field.kind === "str") {
-      return `<input type="text" data-prompt="${key}" value="${esc(text)}" maxlength="24" autocomplete="off">`;
+      const maxlength = field.maxlength || 24;
+      return `<input type="text" data-prompt="${key}" value="${esc(text)}" maxlength="${maxlength}" autocomplete="off">`;
     }
     return `<textarea data-prompt="${key}" rows="${field.rows || 3}" spellcheck="false">${esc(text)}</textarea>`;
   }

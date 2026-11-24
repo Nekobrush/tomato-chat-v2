@@ -90,3 +90,27 @@ def test_reset_removes_file_and_restores_defaults() -> None:
 def test_render_ignores_stray_braces() -> None:
     text = prompts.render("{ai_name} 说 {unknown} {} 喵", ai_name="tomato")
     assert text == "tomato 说 {unknown} {} 喵"
+
+
+def test_message_prefix_and_suffix_apply_immediately() -> None:
+    payload = _payload()
+    payload["message_prefix"] = "【{ai_name}】"
+    payload["message_suffix"] = "—— 完"
+    saved = prompts.save(payload)
+
+    assert saved["message_prefix"] == "【{ai_name}】"
+    assert prompts.MESSAGE_PREFIX == f"【{cfg.AI_NAME}】"
+    assert prompts.MESSAGE_SUFFIX == "—— 完"
+    assert prompts.decorate("你好") == f"【{cfg.AI_NAME}】你好—— 完"
+
+
+def test_message_prefix_and_suffix_can_be_empty() -> None:
+    payload = _payload()
+    payload["message_prefix"] = ""
+    payload["message_suffix"] = ""
+    prompts.save(payload)
+
+    assert prompts.MESSAGE_PREFIX == ""
+    assert prompts.MESSAGE_SUFFIX == ""
+    assert prompts.decorate("你好") == "你好"
+    assert prompts.decorate(prompts.EMPTY_REPLY) == prompts.EMPTY_REPLY
