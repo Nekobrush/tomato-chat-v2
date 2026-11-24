@@ -89,7 +89,7 @@ python launcher.py --port 9000     # 临时换端口
 
 | 常量 | 说明 |
 | --- | --- |
-| `AI_NAME` | 机器人自称，写进人设 |
+| `AI_NAME` | 机器人自称的出厂默认值；改名字在网页「人格与提示词」里改，会写进 `webui_prompts.json` |
 | `ALLOW_GROUPS` | 允许工作的群号集合，**必须把群号写进来**；留空则机器人不理会任何群 |
 | `MODELS` | 模型源表，每项支持 `type`（`ollama` / `openai`）、`label`、`url`、`api_key`、`model`、`extra_body` |
 | `DEFAULT_SOURCE` / `DEFAULT_MODEL_INDEX` | 默认模型源与默认模型下标 |
@@ -228,7 +228,7 @@ http://127.0.0.1:8765/webui/
 
 - 删掉 `webui_config.json` 就回到 `bot_config.py` 里的默认值；
 - 群开关、水群概率这类运行期状态只存在内存里，重启后回到默认；
-- 人格与提示词单独存在 **`webui_prompts.json`**，删掉就回到代码里的默认文案；保存时会在进程内重新构建提示词，下一条回复即生效，不用重启。
+- 人格与提示词（含 **AI 名字**）单独存在 **`webui_prompts.json`**，删掉就回到代码里的默认文案和 `bot_config.AI_NAME`；保存时会在进程内重新构建提示词，下一条回复即生效，不用重启。
 
 提示词文案里支持占位符，运行时替换：人设里的 `{ai_name}`（AI 名字）、`{emotions}`（11 个情绪清单），太长提示里的 `{limit}`（`RESP_LEN_LIMIT`），聚焦指令里的 `{who}` / `{target}` / `{quoted}`，时间说明里的 `{timestamp}` / `{time}` / `{self_id}`。花括号写错不会崩溃，会被原样保留。
 

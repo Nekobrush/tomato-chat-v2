@@ -52,11 +52,13 @@ def test_save_writes_overlay_and_applies_values(sandbox):
     assert merged["MAX_MEMORY"] == 8
 
 
-def test_ai_name_change_applies_without_restart(sandbox):
+def test_ai_name_is_not_a_bot_config_field(sandbox):
+    # AI 名字属于人格设定，存在 webui_prompts.json，不再走机器人配置
+    assert "AI_NAME" not in [field["key"] for field in config_store.FIELDS]
     _, restart = config_store.save({"AI_NAME": "mikan"})
 
-    assert cfg.AI_NAME == "mikan"
     assert restart == []
+    assert cfg.AI_NAME != "mikan"
 
 
 @pytest.mark.parametrize(
@@ -67,7 +69,6 @@ def test_ai_name_change_applies_without_restart(sandbox):
         {"MAX_MEMORY": 1.5},
         {"ALLOW_GROUPS": ["abc"]},
         {"DEFAULT_SOURCE": "not-exist"},
-        {"AI_NAME": "   "},
     ],
 )
 def test_save_rejects_bad_values(sandbox, payload):
@@ -109,7 +110,6 @@ def test_overlay_file_overrides_defaults(sandbox):
     overlay.write_text(
         json.dumps(
             {
-                "AI_NAME": "overlay-cat",
                 "ALLOW_GROUPS": ["777"],
                 "MAX_MEMORY": 5,
                 "MODELS": {"remote": {"type": "openai", "url": "http://host:1"}},
@@ -123,7 +123,6 @@ def test_overlay_file_overrides_defaults(sandbox):
 
     cfg._apply_webui_overlay()
 
-    assert cfg.AI_NAME == "overlay-cat"
     assert cfg.ALLOW_GROUPS == {"777"}
     assert cfg.MAX_MEMORY == 5
     assert cfg.DEFAULT_SOURCE == "remote"
@@ -132,8 +131,8 @@ def test_overlay_file_overrides_defaults(sandbox):
 
 def test_broken_overlay_is_ignored(sandbox):
     (sandbox / config_store.OVERLAY_NAME).write_text("{not json", encoding="utf-8")
-    before = cfg.AI_NAME
+    before = cfg.MAX_MEMORY
 
     cfg._apply_webui_overlay()
 
-    assert cfg.AI_NAME == before
+    assert cfg.MAX_MEMORY == before

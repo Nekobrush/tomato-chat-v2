@@ -26,7 +26,7 @@ def test_defaults_render_placeholders() -> None:
     assert "{ai_name}" in data["system"]
     assert "{emotions}" in data["system"]
     assert data["ai_name"] == cfg.AI_NAME
-    assert "ai_name" not in prompts.defaults()
+    assert prompts.defaults()["ai_name"] == prompts.DEFAULT_AI_NAME
 
     assert cfg.AI_NAME in prompts.SYSTEM_PROMPT
     assert cfg.EMOTIONS[0] in prompts.SYSTEM_PROMPT
@@ -82,8 +82,8 @@ def test_reset_removes_file_and_restores_defaults() -> None:
 
     restored = prompts.reset()
     assert not prompts.PROMPTS_FILE.exists()
-    assert set(restored) == set(prompts.defaults()) | {"ai_name"}
-    assert all(restored[key] == value for key, value in prompts.defaults().items())
+    assert restored == prompts.defaults()
+    assert restored["ai_name"] == prompts.DEFAULT_AI_NAME
     assert "临时改动喵。" not in prompts.SYSTEM_PROMPT
 
 

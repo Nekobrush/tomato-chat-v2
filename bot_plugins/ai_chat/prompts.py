@@ -68,11 +68,13 @@ DEFAULT_REQFAIL_TIPS = (
 
 DEFAULT_EMPTY_REPLY = "喵？"
 
-# AI 名字单独存放（在 bot_config 的 webui_config.json 覆盖里），但展示在人格页
+# AI 名字也是人格的一部分：默认取 bot_config 里的值，保存后写进 webui_prompts.json
+DEFAULT_AI_NAME = cfg.AI_NAME
 AI_NAME_KEY = "ai_name"
 
 # 可编辑字段的默认值（顺序即 WebUI 里展示的顺序）
 DEFAULTS: dict[str, Any] = {
+    "ai_name": DEFAULT_AI_NAME,
     "system": DEFAULT_SYSTEM,
     "example_user": DEFAULT_EXAMPLE_USER,
     "example_assistant": DEFAULT_EXAMPLE_ASSISTANT,
@@ -98,7 +100,7 @@ FIELDS: list[dict[str, Any]] = [
         "label": "AI 名字",
         "kind": "str",
         "rows": 1,
-        "help": "替代人设里的 {ai_name}，也用于日志和「关于」页。属于人格设定，保存在「模型与设置」的配置里。",
+        "help": "替代人设里的 {ai_name}。属于人格设定，和下面的文案一起存在 webui_prompts.json，恢复默认会回到 bot_config.AI_NAME。",
     },
     {
         "key": "system",
@@ -195,7 +197,6 @@ def defaults() -> dict[str, Any]:
 def current() -> dict[str, Any]:
     """默认值 + 文件覆盖，用于页面展示。"""
     merged = defaults()
-    merged["ai_name"] = cfg.AI_NAME
     try:
         raw = json.loads(PROMPTS_FILE.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -204,7 +205,7 @@ def current() -> dict[str, Any]:
         return merged
     if isinstance(raw, dict):
         for key in merged:
-            if key in raw and key != "ai_name":
+            if key in raw:
                 merged[key] = raw[key]
     return merged
 
@@ -226,6 +227,7 @@ def _validate(payload: dict[str, Any]) -> dict[str, Any]:
         raise PromptError("提交的内容不是对象喵。")
 
     data: dict[str, Any] = {}
+    data["ai_name"] = _require_text(payload, "ai_name", "AI 名字", 24)
     data["system"] = _require_text(payload, "system", "人设", 12000)
     data["example_user"] = _require_text(payload, "example_user", "示例用户消息", 2000)
     data["example_assistant"] = _require_text(payload, "example_assistant", "示例回复", 2000)
@@ -282,7 +284,9 @@ def apply(data: dict[str, Any]) -> None:
     global TIPS_NO_MEOW, REQFAIL_TIPS, EMPTY_REPLY, PRIVATE_NOTE
     global FOCUS_HINT_TEMPLATE, CONTEXT_NOTE_TEMPLATE
 
-    SYSTEM_PROMPT = render(data["system"], ai_name=cfg.AI_NAME, emotions=EMOTION_LIST)
+    SYSTEM_PROMPT = render(data["system"], ai_name=data["ai_name"], emotions=EMOTION_LIST)
+    # 名字也同步回 bot_config，方便日志等其它地方继续用 cfg.AI_NAME
+    cfg.AI_NAME = data["ai_name"]
     SYSTEM_MESSAGES = [{"role": "system", "content": SYSTEM_PROMPT}]
     SYSTEM_MESSAGES.append({"role": "user", "content": data["example_user"]})
     SYSTEM_MESSAGES.append({"role": "assistant", "content": data["example_assistant"]})

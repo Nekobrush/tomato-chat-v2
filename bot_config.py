@@ -145,7 +145,6 @@ import json  # noqa: E402  (放在最后，避免打乱上面的配置阅读顺�
 _WEBUI_OVERLAY = BASE_DIR / "webui_config.json"
 
 _OVERLAY_SCALARS = {
-    "AI_NAME": str,
     "DEFAULT_SOURCE": str,
     "DEFAULT_MODEL_INDEX": int,
     "GLOBAL_CTX": int,

@@ -96,7 +96,7 @@ def test_status_shape(client):
     assert {segment["group_id"] for segment in payload["groups"]} == set(cfg.ALLOW_GROUPS)
     assert payload["stats"]["group_count"] == len(cfg.ALLOW_GROUPS)
     assert payload["model"]["sources"]
-    assert payload["config"]["values"]["AI_NAME"] == cfg.AI_NAME
+    assert "ALLOW_GROUPS" in payload["config"]["values"]
     assert len(payload["config"]["fields"]) == len(KEYS)
     assert set(payload["emotions"]["counts"]) == set(cfg.EMOTIONS)
 
@@ -266,7 +266,7 @@ def test_prompts_roundtrip_and_validation(client, sandbox, monkeypatch):
     assert data["fields"] and "system" in data["values"]
     assert data["file"] == "webui_prompts.json"
     assert data["values"]["ai_name"] == "tomato"
-    assert "ai_name" not in data["defaults"]
+    assert data["defaults"]["ai_name"] == "tomato"
 
     values = dict(data["values"])
     values["system"] = values["system"] + "\n额外设定喵。"
@@ -279,9 +279,8 @@ def test_prompts_roundtrip_and_validation(client, sandbox, monkeypatch):
     assert "mikan" in prompts.SYSTEM_PROMPT
     assert (sandbox / "webui_prompts.json").exists()
     stored = json.loads((sandbox / "webui_prompts.json").read_text(encoding="utf-8"))
-    assert "ai_name" not in stored
-    overlay = json.loads((sandbox / config_store.OVERLAY_NAME).read_text(encoding="utf-8"))
-    assert overlay["AI_NAME"] == "mikan"
+    assert stored["ai_name"] == "mikan"
+    assert prompts.SYSTEM_PROMPT.count("mikan") >= 1
 
     bad = dict(values)
     bad["system"] = ""
@@ -295,4 +294,4 @@ def test_prompts_roundtrip_and_validation(client, sandbox, monkeypatch):
     assert reset.status_code == 200
     assert not (sandbox / "webui_prompts.json").exists()
     assert "额外设定喵" not in prompts.SYSTEM_PROMPT
-    assert reset.json()["values"]["ai_name"] == "mikan"
+    assert reset.json()["values"]["ai_name"] == "tomato"
