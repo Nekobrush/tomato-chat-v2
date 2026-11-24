@@ -316,3 +316,10 @@ def test_build_messages_trims_memory_to_budget(monkeypatch) -> None:
     assert pipeline.store.tokens(group) <= 90
     assert messages[0]["role"] == "system"
     pipeline.store.clear(group)
+
+def test_now_ms_is_milliseconds() -> None:
+    import time
+
+    current = pipeline.now_ms()
+    assert abs(current - int(time.time() * 1000)) < 2000
+

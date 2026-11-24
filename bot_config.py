@@ -99,6 +99,10 @@ MAX_MEMORY = 12            # 每个群最多保留的记忆条数（硬上限）
 # 短句群能多留几条，长句群会自动少留。
 MEMORY_TOKEN_BUDGET = 0
 MERGE_MAX_LEN = 128        # 未回复的连续消息合并时，单条内容的最大长度
+# 记忆持久化：开启后每个群一份 JSON，重启不再失忆。
+# 默认关闭（避免老用户升级后突然多出 data/ 目录），想要就改成 True。
+MEMORY_PERSIST_ENABLED = False
+MEMORY_STORE_PATH = BASE_DIR / "data" / "memory"
 
 # ------------------------------- 排队与合并 -------------------------------
 # 本地生成一条要几秒，生成期间别人再 @ 就不再各排一条：
@@ -111,6 +115,11 @@ PENDING_TEXT_LIMIT = 200   # 合并后的待办文本最多保留多长（字符
 PRIVATE_CHAT_ENABLED = True       # 是否回应私聊
 ALLOW_PRIVATE_USERS = set()       # 留空=所有私聊用户；填 QQ 号则只回这些人
 PRIVATE_MEMORY_PREFIX = "private"  # 私聊记忆的键前缀，如 private:123456
+
+# ------------------------------- 网页试聊 -------------------------------
+# 试聊走一个虚拟会话，不经过 QQ：改这两个值可以把试聊记录与"机器人身份"换掉。
+WEBUI_SESSION_GROUP = "webui-test"   # 试聊记忆的会话键
+WEBUI_SESSION_BOT_ID = 10000         # 提示词里"你的 QQ 号"用这个值
 
 # ------------------------------- 多模态（看图） -------------------------------
 # 只有模型本身支持图片时才会真的把图发给它；不支持时退回纯文本行为。
@@ -214,6 +223,7 @@ _OVERLAY_SCALARS = {
     "NORMAL_USER_MAX_WATER_PROBABILITY": float,
     "MAX_MEMORY": int,
     "MEMORY_TOKEN_BUDGET": int,
+    "MEMORY_PERSIST_ENABLED": _as_bool,
     "MERGE_MAX_LEN": int,
     "RESP_LEN_LIMIT": int,
     "SPLIT_PATTERN": str,

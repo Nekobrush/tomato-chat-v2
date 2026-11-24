@@ -11,6 +11,8 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+import bot_config as cfg
+
 # 接口在调用时才会去 import 插件模块，这里先把 NoneBot 初始化好。
 nonebot.init(
     driver="~fastapi",
@@ -345,3 +347,8 @@ def test_chat_rejects_bad_images(client):
 
     blank = client.post("/api/chat", json={"images": [{"base64": "", "mime": "image/png"}]})
     assert blank.status_code == 400
+
+def test_webui_session_uses_config() -> None:
+    assert webui_api.WEBUI_TEST_GROUP == cfg.WEBUI_SESSION_GROUP
+    assert webui_api.WEBUI_SESSION_BOT_ID == cfg.WEBUI_SESSION_BOT_ID
+

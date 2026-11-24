@@ -16,11 +16,31 @@ from nonebot.log import logger
 import bot_config as cfg
 
 from .model import llm
-from .memory import DEFAULT_MARK, PERSISTENCE_MARK, TIP_MARK, MemoryStore
+from .memory import (
+    DEFAULT_MARK,
+    PERSISTENCE_MARK,
+    TIP_MARK,
+    JsonMemoryStorage,
+    MemoryStore,
+)
 from . import prompts
 from .text import collapse_whitespace, extract_emotions, remove_emojis
 
-store = MemoryStore(cfg.MAX_MEMORY)
+# 是否把记忆落盘由配置决定；关闭时行为与以前完全一致（纯内存）。
+store = MemoryStore(
+    cfg.MAX_MEMORY,
+    JsonMemoryStorage(cfg.MEMORY_STORE_PATH)
+    if getattr(cfg, "MEMORY_PERSIST_ENABLED", False)
+    else None,
+)
+
+
+def now_ms() -> int:
+    """当前时间的毫秒时间戳。
+
+    单点封装是为了让测试可以替换时钟，也让"记录时间"只依赖这一个来源。
+    """
+    return int(time.time() * 1000)
 
 _locks: dict[str, asyncio.Lock] = {}
 
@@ -58,7 +78,7 @@ def format_user_message(
     `occurred_at` 用事件的真实发生时间，而不是"轮到处理它的时间"——
     本地生成一次要好几秒，用处理时间会把对话时间线压平。
     """
-    timestamp = int(occurred_at) if occurred_at is not None else int(time.time() * 1000)
+    timestamp = int(occurred_at) if occurred_at is not None else now_ms()
     return f"[{timestamp}]{nickname}({user_id}):\n{text}"
 
 
@@ -114,7 +134,7 @@ def focus_hint(nickname: str, user_id: int | str, text: str, count: int = 1) -> 
 # ---------------------------------------------------------------------------
 
 def system_context(bot_id: int | str) -> dict[str, str]:
-    now = time.time()
+    now = now_ms() / 1000
     readable = datetime.fromtimestamp(now).strftime("%Y-%m-%d %H:%M:%S")
     content = prompts.render(
         prompts.CONTEXT_NOTE_TEMPLATE,

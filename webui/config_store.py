@@ -49,6 +49,12 @@ FIELDS: list[dict[str, Any]] = [
         "step": 128,
         "help": "0 = 按上下文自动取 35%；长句群会自动少留几条，避免记忆把上下文占满。",
     },
+    {
+        "key": "MEMORY_PERSIST_ENABLED",
+        "label": "记忆持久化",
+        "kind": "bool",
+        "help": "开启后每个会话一份 JSON（data/memory/），重启不再失忆；关闭则只在内存里。",
+    },
     {"key": "MERGE_MAX_LEN", "label": "合并消息长度", "kind": "int", "min": 16, "max": 4096},
     {"key": "RESP_LEN_LIMIT", "label": "回复过长阈值", "kind": "int", "min": 16, "max": 1000},
     {"key": "SPLIT_PATTERN", "label": "分条正则", "kind": "pattern",

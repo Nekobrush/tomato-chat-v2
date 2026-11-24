@@ -27,7 +27,9 @@ import bot_config as cfg
 from . import config_store
 
 VERSION = "1.0.0"
-WEBUI_TEST_GROUP = "webui-test"
+# 试聊走一个虚拟会话，键与"机器人 QQ 号"都可在 bot_config.py 里改
+WEBUI_TEST_GROUP = cfg.WEBUI_SESSION_GROUP
+WEBUI_SESSION_BOT_ID = cfg.WEBUI_SESSION_BOT_ID
 
 STARTED_AT = time.time()
 _RESTART_PENDING: set[str] = set()
@@ -441,7 +443,9 @@ async def webui_chat(body: ChatIn) -> dict[str, Any]:
     async with pipeline.group_lock(group_id):
         pipeline.remember_user(group_id, "网页访客", "webui", text or "[图片]")
         try:
-            messages = await pipeline.generate_reply(group_id, 10000, images=images or None)
+            messages = await pipeline.generate_reply(
+                group_id, WEBUI_SESSION_BOT_ID, images=images or None
+            )
         except LLMError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 

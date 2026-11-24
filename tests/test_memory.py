@@ -4,6 +4,7 @@ import bot_config as cfg
 from bot_plugins.ai_chat.memory import (
     DEFAULT_MARK,
     PERSISTENCE_MARK,
+    JsonMemoryStorage,
     MemoryStore,
     estimate_tokens,
 )
@@ -114,3 +115,46 @@ def test_trim_to_tokens_keeps_persistence_record() -> None:
     store.trim_to_tokens("g", 80)
     marks = [r.mark for r in store.records("g")]
     assert PERSISTENCE_MARK in marks
+
+
+def test_store_persists_records_to_json(tmp_path) -> None:
+    storage = JsonMemoryStorage(tmp_path)
+    store = MemoryStore(4, storage)
+    store.append("893", "user", "[1]小明(1):\n你好")
+    store.append("893", "assistant", "你也好呀")
+    store.append("private:1", "user", "私聊内容")
+
+    reloaded = MemoryStore(4, JsonMemoryStorage(tmp_path))
+    assert [record.content for record in reloaded.records("893")] == [
+        "[1]小明(1):\n你好",
+        "你也好呀",
+    ]
+    assert reloaded.count("private:1") == 1
+    # 会话键里有冒号也不会变成子目录
+    assert all(path.parent == tmp_path for path in tmp_path.glob("*.json"))
+
+
+def test_store_marks_survive_restart(tmp_path) -> None:
+    store = MemoryStore(4, JsonMemoryStorage(tmp_path))
+    store.append("893", "system", "群规：不许刷屏", mark=PERSISTENCE_MARK)
+    store.append("893", "user", "收到")
+
+    reloaded = MemoryStore(4, JsonMemoryStorage(tmp_path))
+    marks = [record.mark for record in reloaded.records("893")]
+    assert marks == [PERSISTENCE_MARK, DEFAULT_MARK]
+
+
+def test_clear_deletes_memory_file(tmp_path) -> None:
+    store = MemoryStore(4, JsonMemoryStorage(tmp_path))
+    store.append("893", "user", "hello")
+    assert len(list(tmp_path.glob("*.json"))) == 1
+
+    store.clear("893")
+    assert list(tmp_path.glob("*.json")) == []
+
+
+def test_storage_is_optional() -> None:
+    assert MemoryStore().storage is None
+    store = MemoryStore(2)
+    store.append("g", "user", "hi")
+    assert store.count("g") == 1

@@ -6,10 +6,16 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 import bot_config as cfg
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MARK = "default"
 # 中文约 1.7 字/token、英文约 4 字符/token；估算只用于裁剪，不要求精确
@@ -53,12 +59,104 @@ def _truncate(content: str) -> str:
     return "…" + content[-limit:]
 
 
+class JsonMemoryStorage:
+    """把每个会话的记忆落盘成一份 JSON。
+
+    会话键既可能是群号，也可能是 `private:123456` 这类带符号的键，
+    所以文件名做一次替换 + 哈希，避免路径穿越与重名。
+    """
+
+    def __init__(self, root: Path) -> None:
+        self.root = Path(root)
+
+    def path_for(self, group_id: str) -> Path:
+        safe = re.sub(r"[^0-9A-Za-z_.\-]+", "_", group_id).strip("_")[:40] or "session"
+        digest = hashlib.sha1(group_id.encode("utf-8")).hexdigest()[:8]
+        return self.root / f"{safe}-{digest}.json"
+
+    def load_all(self) -> dict[str, list[Record]]:
+        loaded: dict[str, list[Record]] = {}
+        if not self.root.is_dir():
+            return loaded
+        for path in sorted(self.root.glob("*.json")):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                logger.warning("读取记忆文件 %s 失败：%s", path.name, exc)
+                continue
+            if not isinstance(data, dict):
+                continue
+            group_id = str(data.get("group_id") or "").strip()
+            items = data.get("records")
+            if not group_id or not isinstance(items, list):
+                continue
+            records = [
+                Record(
+                    role=str(item.get("role") or "user"),
+                    content=str(item.get("content") or ""),
+                    mark=str(item.get("mark") or DEFAULT_MARK),
+                )
+                for item in items
+                if isinstance(item, dict) and str(item.get("content") or "").strip()
+            ]
+            if records:
+                loaded[group_id] = records
+        return loaded
+
+    def save(self, group_id: str, records: list[Record]) -> None:
+        path = self.path_for(group_id)
+        payload = {
+            "group_id": group_id,
+            "records": [
+                {"role": record.role, "content": record.content, "mark": record.mark}
+                for record in records
+            ],
+        }
+        try:
+            self.root.mkdir(parents=True, exist_ok=True)
+            temp = path.with_suffix(".tmp")
+            temp.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            temp.replace(path)
+        except OSError as exc:
+            logger.warning("写入记忆文件 %s 失败：%s", path.name, exc)
+
+    def clear(self, group_id: str) -> None:
+        try:
+            self.path_for(group_id).unlink(missing_ok=True)
+        except OSError as exc:
+            logger.warning("删除记忆文件失败：%s", exc)
+
+
 class MemoryStore:
     """按群保存的对话记忆。所有方法都是同步的，单事件循环下无需加锁。"""
 
-    def __init__(self, max_record: int = cfg.MAX_MEMORY) -> None:
+    def __init__(
+        self,
+        max_record: int = cfg.MAX_MEMORY,
+        storage: JsonMemoryStorage | None = None,
+    ) -> None:
         self._max_record = max_record
         self._records: dict[str, list[Record]] = {}
+        self._storage = storage
+        if storage is not None:
+            self._records.update(storage.load_all())
+
+    # ------------------------------------------------------------------ 持久化
+    @property
+    def storage(self) -> JsonMemoryStorage | None:
+        return self._storage
+
+    def _persist(self, group_id: str) -> None:
+        if self._storage is None:
+            return
+        records = self._records.get(group_id)
+        if records:
+            self._storage.save(group_id, records)
+        else:
+            self._storage.clear(group_id)
 
     # ------------------------------------------------------------------ 基础
     @property
@@ -69,6 +167,7 @@ class MemoryStore:
         self._max_record = max(1, max_record)
         for group_id in list(self._records):
             self._trim(group_id, self._max_record)
+            self._persist(group_id)
 
     def _ensure(self, group_id: str) -> list[Record]:
         return self._records.setdefault(group_id, [])
@@ -100,6 +199,7 @@ class MemoryStore:
         self._trim(group_id, max(self._max_record - 1, 0))
         records.append(record)
         self._trim(group_id, self._max_record)
+        self._persist(group_id)
         return record
 
     # ------------------------------------------------------------------ 预算
@@ -132,6 +232,8 @@ class MemoryStore:
                     break
                 records.pop(0)
                 removed += 1
+        if removed:
+            self._persist(group_id)
         return removed
 
     # ------------------------------------------------------------------ 查询
@@ -149,7 +251,9 @@ class MemoryStore:
         records = self._records.get(group_id)
         if not records:
             return None
-        return records.pop()
+        record = records.pop()
+        self._persist(group_id)
+        return record
 
     def merge_user_tail(self, group_id: str) -> bool:
         """把最后一条用户消息并入前一条用户消息，返回是否合并。
@@ -167,8 +271,11 @@ class MemoryStore:
             return False
         previous.content = _truncate(f"{previous.content}\n{last.content}")
         records.pop()
+        self._persist(group_id)
         return True
 
     def clear(self, group_id: str) -> int:
         """清空某群记忆，返回清掉的条数。"""
-        return len(self._records.pop(group_id, []))
+        removed = len(self._records.pop(group_id, []))
+        self._persist(group_id)
+        return removed

@@ -12,6 +12,7 @@ venv/
 # 网页控制台保存的覆盖配置与运行日志
 webui_config.json
 logs/
+data/
 
 # 测试与工具缓存
 .pytest_cache/

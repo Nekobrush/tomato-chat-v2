@@ -932,7 +932,7 @@
     { title: "模型", keys: ["MODELS", "DEFAULT_SOURCE", "DEFAULT_MODEL_INDEX"], desc: "ollama 和 OpenAI 兼容（LM Studio / DeepSeek / OneAPI）都可以。" },
     { title: "生成参数", keys: ["GLOBAL_CTX", "PREDICT", "TEMPERATURE", "TOP_K", "TOP_P", "REPEAT_PENALTY", "REQUEST_TIMEOUT"], desc: "决定回复的长度和风格，改完立刻生效。" },
     { title: "行为概率", keys: ["DEFAULT_WATER_PROBABILITY", "SEND_IMAGE_PROBABILITY", "REPLY_PROBABILITY", "NORMAL_USER_MAX_WATER_PROBABILITY", "MERGE_MAX_LEN", "RESP_LEN_LIMIT"], desc: "水群、发图、引用回复和合并消息的规则。" },
-    { title: "记忆", keys: ["MAX_MEMORY", "MEMORY_TOKEN_BUDGET"], desc: "每个群保留多少条上下文，以及最多占多少 token。" },
+    { title: "记忆", keys: ["MAX_MEMORY", "MEMORY_TOKEN_BUDGET", "MEMORY_PERSIST_ENABLED"], desc: "每个群保留多少条上下文、最多占多少 token；开启持久化后重启不再失忆。" },
   ];
 
   function fieldByKey(key) {
