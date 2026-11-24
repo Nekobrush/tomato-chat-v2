@@ -31,7 +31,8 @@ import bot_config as cfg
 from . import pipeline
 from .commands import USAGE_TEXT, handle_command
 from .model import llm
-from .runtime import STATES, GroupState, nickname, state as _state
+from .runtime import STATES, GroupState, nickname
+from .runtime import state as _state
 from .text import parse_command, segments_to_text
 from .vision import image_sources
 
@@ -137,7 +138,6 @@ except ValueError:
 
 # 私聊 matcher 在 private.py 里注册，import 即生效（不含群聊的排队/水群/权限）
 from .private import handle_private_message, private_matcher  # noqa: E402
-
 
 __all__ = [
     "STATES",

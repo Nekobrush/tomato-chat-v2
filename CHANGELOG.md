@@ -1,5 +1,12 @@
 # 更新日志
 
+## 未发布 — 仓库卫生
+
+- 新增 `pyproject.toml`：项目元数据、依赖、`pytest` / `ruff` 配置集中管理；`pytest.ini` 并入后删除。
+- 版本号单一来源：`bot_plugins/ai_chat/_version.py`，WebUI `/api/health` 从它读取。
+- 新增 `ruff` 配置与 CI 中的 lint 步骤；`requirements-dev.txt` 增加 `ruff`。
+- 提供 `tomato-chat` 命令（`pip install -e .[dev]`），`.gitignore` 补充 `build/`、`dist/`。
+
 ## v1.0.0 — 2026-11-24
 
 首个基于 NoneBot2 的版本。从原来的 NoneBot1 单文件插件整体重写：框架换代、模型层抽象、加了一整套网页控制台，并把「人设 / 提示词 / 消息装饰 / 分条发送」全部做成可配置项。

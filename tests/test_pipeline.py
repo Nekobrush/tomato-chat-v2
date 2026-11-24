@@ -3,11 +3,10 @@
 import pytest
 
 import bot_config as cfg
+from bot_plugins.ai_chat import pipeline, prompts
+from bot_plugins.ai_chat.model import LLMError
 
 BOT_ID = 10000  # 测试里代表机器人自己的 QQ 号
-import bot_plugins.ai_chat.pipeline as pipeline
-from bot_plugins.ai_chat import prompts
-from bot_plugins.ai_chat.model import LLMError
 
 
 def _fake_chat(monkeypatch: pytest.MonkeyPatch, reply: str) -> None:

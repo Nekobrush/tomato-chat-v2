@@ -15,7 +15,7 @@ from nonebot.log import logger
 
 import bot_config as cfg
 
-from .model import llm
+from . import prompts
 from .memory import (
     DEFAULT_MARK,
     PERSISTENCE_MARK,
@@ -23,7 +23,7 @@ from .memory import (
     JsonMemoryStorage,
     MemoryStore,
 )
-from . import prompts
+from .model import llm
 from .text import collapse_whitespace, extract_emotions, remove_emojis
 
 # 是否把记忆落盘由配置决定；关闭时行为与以前完全一致（纯内存）。

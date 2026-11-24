@@ -24,7 +24,6 @@ nonebot.init(
     _env_file=None,
 )
 
-import bot_config as cfg  # noqa: E402
 from webui import api as webui_api  # noqa: E402
 from webui import config_store  # noqa: E402
 

@@ -23,10 +23,11 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 import bot_config as cfg
+from bot_plugins.ai_chat import _version
 
 from . import config_store
 
-VERSION = "1.0.0"
+VERSION = _version.__version__
 # 试聊走一个虚拟会话，键与"机器人 QQ 号"都可在 bot_config.py 里改
 WEBUI_TEST_GROUP = cfg.WEBUI_SESSION_GROUP
 WEBUI_SESSION_BOT_ID = cfg.WEBUI_SESSION_BOT_ID

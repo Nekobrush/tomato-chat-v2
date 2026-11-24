@@ -381,10 +381,22 @@ tomato-chat/
 ## 测试
 
 ```bash
+pip install -r requirements-dev.txt
 pytest -q
+ruff check .
 ```
 
-当前 221 个用例全部通过，覆盖指令解析、记忆裁剪/合并、模型切换与同步、两种模型后端的请求/错误处理、生成流程、提示词前缀稳定性、回复排队与合并、私聊（配置开关与白名单）、多模态图片链路与触发规则、WebUI 的配置校验与接口，以及插件冒烟。
+当前 227 个用例全部通过，覆盖指令解析、记忆裁剪/合并、模型切换与同步、两种模型后端的请求/错误处理、生成流程、提示词前缀稳定性、回复排队与合并、私聊（配置开关与白名单）、多模态图片链路与触发规则、WebUI 的配置校验与接口，以及插件冒烟。
+
+项目元数据、依赖与 `pytest` / `ruff` 配置都在 `pyproject.toml`；版本号只在 [`bot_plugins/ai_chat/_version.py`](bot_plugins/ai_chat/_version.py) 里写一次，WebUI 的 `/api/health` 也读它。
+
+也可以把项目装进当前环境（获得 `tomato-chat` 命令）：
+
+```bash
+pip install -e .[dev]
+tomato-chat --no-browser
+```
+
 
 ### 本地性能测量
 

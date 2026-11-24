@@ -30,3 +30,5 @@ crop.png
 GPT-Speak-main/
 webui_prompts.json
 pytest-of-*/
+build/
+dist/

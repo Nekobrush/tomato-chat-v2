@@ -16,7 +16,8 @@ from .errors import LLMError
 from .messaging import reply_text
 from .model import llm
 from .queue import enqueue
-from .runtime import GroupState, can_manage, is_superuser, nickname, state as get_state
+from .runtime import GroupState, can_manage, is_superuser, nickname
+from .runtime import state as get_state
 from .text import parse_command
 
 USAGE_TEXT = "\n".join(

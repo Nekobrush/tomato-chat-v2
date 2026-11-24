@@ -244,7 +244,6 @@ async def test_chatstart_chatstop(plugin) -> None:
 
 
 async def test_msg_outside_allowed_group_ignored(plugin) -> None:
-    bot = FakeBot()
     event = make_event("你好", group_id=999, to_me=True)
     # 规则层会拦住不在白名单的群，这里直接验证规则函数
     assert plugin._chat_rule(event) is False
@@ -344,6 +343,7 @@ def _patch_vision(plugin, monkeypatch: pytest.MonkeyPatch, parts=None) -> list[d
 
 async def test_tome_image_message_is_recognized(plugin, monkeypatch: pytest.MonkeyPatch) -> None:
     from nonebot.adapters.onebot.v11 import MessageSegment
+
     from bot_plugins.ai_chat import queue as chat_queue
 
     downloaded = _patch_vision(plugin, monkeypatch)
