@@ -9,6 +9,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# 测试不要往仓库里写记忆文件：插件在 import 时就会按这个开关建存储，
+# 所以必须在任何 bot_plugins 导入之前关掉（用户的 webui_config.json 可能开着）。
+import bot_config as _cfg  # noqa: E402
+
+_cfg.MEMORY_PERSIST_ENABLED = False
+_cfg.MEMORY_STORE_PATH = ROOT / "data" / "__tests_should_not_write__"
+
 
 @pytest.fixture(autouse=True)
 def _isolate_runtime_config(monkeypatch: pytest.MonkeyPatch):
