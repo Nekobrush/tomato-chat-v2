@@ -187,6 +187,9 @@ def build_messages(
     if focus:
         # 聚焦指令放最后：离生成最近，锚定效果最强
         tail_parts.append(focus)
+    if images:
+        # 图片挂在最后一条 user 上，这里补一句，提醒模型"这一条是有图的"
+        tail_parts.append(f"（这条消息附带了 {len(images)} 张图片，请直接看图回应；看不清就直说看不清，不要假装在分析。）")
     tail = "\n".join(part for part in tail_parts if part)
     if messages[-1]["role"] == "user":
         messages[-1] = {

@@ -775,6 +775,31 @@
     renderChatAttachments();
   }
 
+  // 页面内的图片（聊天记录里的气泡图、表情包）拖进输入框时也能当附件用
+  function addChatDataUrl(dataUrl) {
+    const match = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(String(dataUrl || "").trim());
+    if (!match) return false;
+    const mime = match[1].toLowerCase();
+    const base64 = match[2];
+    const max = imageLimitCount();
+    if (state.chatImages.length >= max) {
+      toast(`一条消息最多 ${max} 张图`, "error");
+      return true;
+    }
+    if (estimateBase64Bytes(base64) > imageLimitBytes()) {
+      toast(`图片太大（上限 ${Math.round(imageLimitBytes() / 1024 / 1024)} MB）`, "error");
+      return true;
+    }
+    state.chatImages.push({ dataUrl: `data:${mime};base64,${base64}`, base64, mime, name: "图片" });
+    renderChatAttachments();
+    return true;
+  }
+
+  function estimateBase64Bytes(base64) {
+    const clean = String(base64 || "").replace(/\s+/g, "");
+    return Math.floor((clean.length * 3) / 4) - (clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0);
+  }
+
   function renderChatAttachments() {
     const box = $("#chat-attachments");
     if (!box) return;
@@ -1572,28 +1597,76 @@
       if (target.matches("[data-key]") || target.closest("#models-editor")) markDirty();
     });
 
-    // 拖放 / 粘贴图片：只在试聊视图生效，挂在 document 上，页面重绘也不会失效
-    document.addEventListener("dragover", (event) => {
-      if (state.view !== "chat") return;
-      const zone = $("#chat-drop");
-      if (!zone || !zone.contains(event.target)) return;
-      event.preventDefault();
-      zone.classList.add("dragging");
+    // 拖放 / 粘贴图片：只在试聊视图生效，挂在 window 捕获阶段，
+    // 这样从资源管理器拖文件进来不会触发浏览器「打开图片」的默认行为。
+    const chatZone = () => (state.view === "chat" ? $("#chat-drop") : null);
+    const dragPayload = (dataTransfer) => {
+      const files = dataTransfer?.files ? Array.from(dataTransfer.files) : [];
+      if (files.length) return { files, dataUrl: "" };
+      const custom = dataTransfer?.getData("text/x-tomato-image") || "";
+      if (custom) return { files: [], dataUrl: custom };
+      for (const type of ["text/uri-list", "text/plain"]) {
+        const value = (dataTransfer?.getData(type) || "").trim();
+        if (/^data:image\//i.test(value)) return { files: [], dataUrl: value };
+      }
+      return { files: [], dataUrl: "" };
+    };
+
+    window.addEventListener(
+      "dragover",
+      (event) => {
+        const zone = chatZone();
+        if (!zone) return;
+        const { files, dataUrl } = dragPayload(event.dataTransfer);
+        if (!files.length && !dataUrl && !zone.contains(event.target)) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+        zone.classList.add("dragging");
+      },
+      true,
+    );
+
+    window.addEventListener(
+      "dragleave",
+      (event) => {
+        const zone = chatZone();
+        if (!zone) return;
+        if (!zone.contains(event.relatedTarget)) zone.classList.remove("dragging");
+      },
+      true,
+    );
+
+    window.addEventListener(
+      "drop",
+      (event) => {
+        const zone = chatZone();
+        if (!zone) return;
+        const { files, dataUrl } = dragPayload(event.dataTransfer);
+        if (!files.length && !dataUrl && !zone.contains(event.target)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        zone.classList.remove("dragging");
+        if (files.length) {
+          addChatFiles(files);
+        } else if (dataUrl) {
+          addChatDataUrl(dataUrl);
+        }
+      },
+      true,
+    );
+
+    // 页面里的图片默认是不可拖的链接/文本，标记一下让 drop 能识别
+    document.addEventListener("dragstart", (event) => {
+      const img = event.target instanceof HTMLImageElement ? event.target : event.target?.querySelector?.("img");
+      if (!img || !/^data:image\//i.test(img.src || "")) return;
+      try {
+        event.dataTransfer?.setData("text/x-tomato-image", img.src);
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy";
+      } catch {
+        /* 某些浏览器不让写自定义类型，忽略即可 */
+      }
     });
-    document.addEventListener("dragleave", (event) => {
-      if (state.view !== "chat") return;
-      const zone = $("#chat-drop");
-      if (!zone) return;
-      if (!zone.contains(event.relatedTarget)) zone.classList.remove("dragging");
-    });
-    document.addEventListener("drop", (event) => {
-      if (state.view !== "chat") return;
-      const zone = $("#chat-drop");
-      if (!zone || !zone.contains(event.target)) return;
-      event.preventDefault();
-      zone.classList.remove("dragging");
-      addChatFiles(event.dataTransfer?.files);
-    });
+
     document.addEventListener("paste", (event) => {
       if (state.view !== "chat") return;
       const files = Array.from(event.clipboardData?.files || []);

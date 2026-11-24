@@ -274,6 +274,7 @@ def test_build_messages_attaches_images_to_last_user() -> None:
     messages = pipeline.build_messages(group_id, 10000, images=images)
     assert messages[-1]["role"] == "user"
     assert messages[-1]["images"] == images
+    assert "附带了 1 张图片" in messages[-1]["content"]
     # 历史里不能出现第二份 base64，否则 prompt 会被反复撑大
     assert all("images" not in message for message in messages[:-1])
     pipeline.reset_group(group_id)
