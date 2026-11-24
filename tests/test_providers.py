@@ -412,3 +412,19 @@ async def test_ollama_chat_sends_images_field() -> None:
     sent = fake.calls[0]["messages"][0]
     assert sent["images"] == ["QUJD"]
     assert "base64" not in sent
+
+
+def test_supports_vision_lists_specific_models() -> None:
+    provider = _openai({"model": ["qwen3.5-9b@q6_k", "llama3.1"], "vision": ["qwen3.5-9b"]})
+    # 列表里只写了片段，也应覆盖同名不同量化的版本
+    assert provider.supports_vision("qwen3.5-9b@q6_k") is True
+    assert provider.supports_vision("Qwen3.5-9B@Q8_0") is True
+    assert provider.supports_vision("llama3.1:latest") is False
+    assert provider.supports_vision("qwen2.5-vl-7b") is False
+
+
+def test_supports_vision_wildcard_and_off_strings() -> None:
+    assert _openai({"vision": "*"}).supports_vision("anything") is True
+    assert _openai({"vision": "all"}).supports_vision("anything") is True
+    assert _openai({"vision": "off"}).supports_vision("qwen2.5-vl-7b") is False
+    assert _openai({"vision": "qwen3.5-9b,qwen2.5-vl"}).supports_vision("qwen3.5-9b@q6_k") is True

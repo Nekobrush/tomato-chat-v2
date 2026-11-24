@@ -129,6 +129,7 @@ def _model_info() -> dict[str, Any]:
         "model": None,
         "models": [],
         "describe": "",
+        "vision": False,
         "sources": [],
     }
     try:
@@ -137,6 +138,7 @@ def _model_info() -> dict[str, Any]:
         info["models"] = llm.models
         info["model"] = llm.models[llm.index] if llm.models else None
         info["describe"] = llm.describe()
+        info["vision"] = llm.supports_vision
     except LLMError as exc:
         info["describe"] = str(exc)
 

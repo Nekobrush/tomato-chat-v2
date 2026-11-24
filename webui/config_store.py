@@ -154,6 +154,25 @@ def _validate_models(value: Any) -> dict[str, dict[str, Any]]:
             entry["api_key"] = str(spec["api_key"]).strip()
         if isinstance(spec.get("extra_body"), dict) and spec["extra_body"]:
             entry["extra_body"] = spec["extra_body"]
+        vision = spec.get("vision")
+        if isinstance(vision, bool):
+            entry["vision"] = vision
+        elif isinstance(vision, (list, tuple)) and vision:
+            picked = [str(item).strip() for item in vision if str(item).strip()]
+            if not picked:
+                raise ConfigError(f"模型源 {name} 的 vision 列表不能全是空白")
+            for item in picked:
+                if len(item) > 64:
+                    raise ConfigError(f"模型源 {name} 的 vision 里有一项太长：{item[:20]}…")
+            entry["vision"] = picked
+        elif isinstance(vision, str) and vision.strip():
+            text = vision.strip()
+            if text.lower() in {"*", "all", "true", "yes", "on"}:
+                entry["vision"] = True
+            elif text.lower() in {"false", "no", "off", "none"}:
+                entry["vision"] = False
+            else:
+                entry["vision"] = [part.strip() for part in text.split(",") if part.strip()]
         if isinstance(spec.get("headers"), dict) and spec["headers"]:
             entry["headers"] = {str(k): str(v) for k, v in spec["headers"].items()}
         cleaned[name] = entry

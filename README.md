@@ -242,7 +242,25 @@ http://127.0.0.1:8765/webui/
 
 ### 多模态（看图）
 
-机器人能不能看图，取决于**当前模型**有没有视觉能力。LM Studio / ollama 不会在接口里声明这个能力，所以按模型名匹配（`VISION_MODEL_PATTERNS`：`vl`、`vision`、`llava`、`qwen2.5-vl`、`gpt-4o`、`claude`、`gemini` 等）。也可以在当前模型源的配置里写 `"vision": true` / `false` 手动锁定。
+机器人能不能看图，取决于**当前模型**有没有视觉能力。LM Studio / ollama 不会在接口里声明这个能力，所以默认按模型名匹配（`VISION_MODEL_PATTERNS`：`vl`、`vision`、`llava`、`qwen2.5-vl`、`gpt-4o`、`claude`、`gemini` 等）。
+
+名字对不上、或者你想强行指定时，在模型源里写 `vision`（网页「模型与设置 › 模型源」里有「能看图的模型」输入框）：
+
+```python
+"lmstudio": {
+    "type": "openai",
+    "url": "http://127.0.0.1:1234",
+    "model": ["qwen3.5-9b@q6_k"],
+    # 只标记某些模型（大小写不敏感，写片段即可覆盖同名不同量化版本）
+    "vision": ["qwen3.5-9b"],
+    # 或者：整个源都算多模态
+    # "vision": True,
+    # 或者：明确关掉
+    # "vision": False,
+}
+```
+
+网页里那一栏的写法：一行一个模型名（片段即可），留空＝按名字自动判断，填 `*`＝这个源所有模型都支持，填 `off`＝明确关闭。保存后立即生效，当前模型是否支持看图会显示在「所有群总览 › 当前模型 › 看图」一行。
 
 | 设置 | 作用 |
 | --- | --- |

@@ -170,3 +170,25 @@ def test_broken_overlay_is_ignored(sandbox):
     cfg._apply_webui_overlay()
 
     assert cfg.MAX_MEMORY == before
+
+
+def test_models_keep_vision_override(sandbox):
+    merged, _ = config_store.save(
+        {
+            "MODELS": {
+                "remote": {
+                    "type": "openai",
+                    "url": "http://127.0.0.1:1234",
+                    "model": ["qwen3.5-9b@q6_k"],
+                    "vision": ["qwen3.5-9b"],
+                },
+                "all-vision": {"type": "openai", "url": "http://127.0.0.2", "model": ["x"], "vision": "*"},
+                "no-vision": {"type": "openai", "url": "http://127.0.0.3", "model": ["y"], "vision": "off"},
+            },
+            "DEFAULT_SOURCE": "remote",
+        }
+    )
+
+    assert merged["MODELS"]["remote"]["vision"] == ["qwen3.5-9b"]
+    assert merged["MODELS"]["all-vision"]["vision"] is True
+    assert merged["MODELS"]["no-vision"]["vision"] is False

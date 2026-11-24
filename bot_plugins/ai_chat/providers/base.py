@@ -78,9 +78,15 @@ class ChatProvider(ABC):
     def supports_vision(self, model: str | None = None) -> bool:
         """这个模型能不能看图。
 
-        模型源里写 ``"vision": true/false`` 时以它为准；否则按模型名猜——
-        LM Studio 和 ollama 都不会主动声明多模态能力，只能靠名字里的
-        `vl` / `vision` / `llava` 这类关键字。
+        模型源里的 ``vision`` 字段可以写成三种形式，优先级高于按名字猜：
+
+        - ``{"vision": true}`` / ``{"vision": false}``：整个源统一开或关；
+        - ``{"vision": ["qwen3.5-9b@q6_k", "llava"]}``：只有列出来的模型能看图
+          （大小写不敏感，写片段也算命中，例如 ``"qwen3.5-9b"`` 覆盖各量化版本）；
+        - ``{"vision": "*"}``：该源所有模型都按多模态处理。
+
+        都不写时按 `cfg.VISION_MODEL_PATTERNS` 猜——LM Studio 和 ollama 不会
+        主动声明多模态能力，只能靠名字里的 `vl` / `vision` / `llava` 这类关键字。
         """
         if not bool(getattr(cfg, "VISION_ENABLED", True)):
             return False
@@ -88,9 +94,21 @@ class ChatProvider(ABC):
         if isinstance(override, bool):
             return override
         name = (model or "").lower()
-        return any(
-            token in name for token in getattr(cfg, "VISION_MODEL_PATTERNS", ())
-        )
+        if isinstance(override, str):
+            override = override.strip()
+            if override in {"*", "all", "true", "yes", "on"}:
+                return True
+            if override in {"", "false", "no", "off", "none"}:
+                return False
+            override = [part for part in override.replace("，", ",").split(",") if part.strip()]
+        if isinstance(override, (list, tuple, set)):
+            wanted = [str(item).strip().lower() for item in override if str(item).strip()]
+            if "*" in wanted:
+                return True
+            if name and any(item in name for item in wanted):
+                return True
+            return False
+        return any(token in name for token in getattr(cfg, "VISION_MODEL_PATTERNS", ()))
 
     def describe(self) -> str:
         return f"{self.label}（{self.kind_label}）"

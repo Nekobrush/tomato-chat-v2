@@ -440,6 +440,7 @@
         <h3>当前模型</h3>
         <div class="status-row"><span class="label">模型源</span><span class="value">${esc(model?.label || "—")} <span class="badge">${esc(model?.kind || "—")}</span></span></div>
         <div class="status-row"><span class="label">模型</span><span class="value mono">${esc(model?.model || "未选择")}</span></div>
+        <div class="status-row"><span class="label">看图</span><span class="value">${model?.vision ? '<span class="badge ok">支持多模态</span>' : '<span class="badge">纯文本（图片会被忽略）</span>'}</span></div>
         <div class="status-row"><span class="label">可选模型</span><span class="value">${modelList}</span></div>
         <div class="status-row"><span class="label">操作</span><span class="value" style="display:flex;gap:6px;justify-content:flex-end">
           <button type="button" data-action="sync-models" style="font-size:12px;padding:3px 9px">同步模型</button>
@@ -849,6 +850,25 @@
     return `<input type="text" data-key="${key}" value="${esc(value ?? "")}">`;
   }
 
+  function visionText(vision) {
+    if (vision === true) return "*";
+    if (vision === false) return "off";
+    if (Array.isArray(vision)) return vision.join("\n");
+    return vision ? String(vision) : "";
+  }
+
+  function parseVision(raw) {
+    const text = String(raw || "").trim();
+    if (!text) return null;
+    const lower = text.toLowerCase();
+    if (["*", "all", "true", "yes", "on"].includes(lower)) return true;
+    if (["false", "no", "off", "none"].includes(lower)) return false;
+    return text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
   function modelsEditor(models) {
     const typeOptions = (current) =>
       [
@@ -876,6 +896,7 @@
           <label class="wide">地址<input data-model-field="url" value="${esc(spec.url || "")}" placeholder="http://127.0.0.1:1234"></label>
           <label class="wide">API Key（本地服务可留空）<input data-model-field="api_key" type="password" value="${esc(spec.api_key || "")}"></label>
           <label class="wide">模型列表（每行一个）<textarea data-model-field="model">${esc((spec.model || []).join("\n"))}</textarea></label>
+          <label class="wide">能看图的模型（每行一个，留空按名字自动判断；填 * 表示这个源全都支持）<textarea data-model-field="vision" placeholder="qwen3.5-9b@q6_k">${esc(visionText(spec.vision))}</textarea></label>
           <label class="wide">extra_body（JSON，可留空）<textarea data-model-field="extra_body">${esc(spec.extra_body ? JSON.stringify(spec.extra_body, null, 2) : "")}</textarea></label>
         </div>
       </div>`,
@@ -958,6 +979,8 @@
       };
       const apiKey = get("api_key").trim();
       if (apiKey) spec.api_key = apiKey;
+      const vision = parseVision(get("vision"));
+      if (vision !== null) spec.vision = vision;
       const rawExtra = get("extra_body").trim();
       if (rawExtra) {
         try {
