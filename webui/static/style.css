@@ -234,7 +234,7 @@ h1{font-size:20px;font-weight:650;line-height:1.35;overflow:hidden;text-overflow
 .setting-group>h3{font-size:16px}
 .setting-group>p{font-size:13px;color:var(--ink-3);padding-bottom:4px}
 .setting{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,440px);gap:6px 32px;align-items:start;padding:15px 0;border-bottom:1px solid var(--line)}
-.setting.prompt-setting{grid-template-columns:minmax(0,1fr) minmax(320px,760px)}
+.setting.prompt-setting{grid-template-columns:minmax(220px,1fr) minmax(320px,760px)}
 .prompt-setting .setting-control{flex-direction:column;align-items:stretch;justify-content:flex-start}
 .prompt-setting textarea{width:100%;min-height:64px;font:12.5px/1.7 var(--code);padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);resize:vertical}
 .setting-title{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-weight:600;font-size:14px}
@@ -308,6 +308,7 @@ dialog::backdrop{background:#0d111a66}
   .inspector{display:none}
   .settings-layout{grid-template-columns:150px minmax(0,1fr)}
   .setting{grid-template-columns:minmax(0,1fr);gap:10px}
+  .setting.prompt-setting{grid-template-columns:minmax(0,1fr);gap:10px}
   .setting-control{justify-content:flex-start}
 }
 @media(max-width:860px){
