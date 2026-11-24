@@ -38,6 +38,37 @@ def fail(message: str) -> None:
     sys.exit(1)
 
 
+def set_title(title: str) -> None:
+    """给控制台窗口设置标题，方便在任务栏里认出来。"""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.SetConsoleTitleW(title)
+    except (AttributeError, OSError):
+        pass
+
+
+def wait_for_enter(reason: str) -> None:
+    """在交互式控制台里停一下，避免双击启动时窗口一闪而过。"""
+    if not sys.stdin or not sys.stdin.isatty():
+        return
+    try:
+        input(f"\n{reason}（按回车关闭窗口）")
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+
+def banner(port: int) -> None:
+    say("=" * 58)
+    say("  tomato · QQ 猫娘机器人")
+    say(f"  控制台: http://127.0.0.1:{port}/webui/")
+    say("  日志会实时打印在这个窗口里；关掉窗口或按 Ctrl+C 即停止")
+    say("=" * 58)
+    say()
+
+
 # ------------------------------- 环境准备 -------------------------------
 
 
@@ -157,7 +188,8 @@ def run_server(python: Path, port: int, no_browser: bool = False) -> int:
 
     if not no_browser:
         webbrowser.open(f"http://127.0.0.1:{port}/webui/")
-    say(f"WebUI: http://127.0.0.1:{port}/webui/    （按 Ctrl+C 停止）\n")
+    say(f"服务已就绪。WebUI: http://127.0.0.1:{port}/webui/")
+    say("关闭这个窗口、或按 Ctrl+C，机器人就会停止。\n")
 
     try:
         return process.wait()
@@ -196,31 +228,36 @@ def main() -> None:
         except (AttributeError, OSError):
             pass
 
+    set_title("tomato-chat")
+
     python = ensure_venv()
-    install_dependencies(python, force=force)
-
-    # 已经开着的话，直接打开页面，避免端口冲突。
-    try:
-        with urllib.request.urlopen(health_url(port), timeout=1.0) as response:
-            if response.status == 200:
-                say(f"[提示] WebUI 已经在运行：http://127.0.0.1:{port}/webui/")
-                if not no_browser:
-                    webbrowser.open(f"http://127.0.0.1:{port}/webui/")
-                return
-    except (urllib.error.URLError, OSError, ValueError):
-        pass
-
-    say(f"[3/4] 准备在端口 {port} 启动服务。")
 
     # 重新进入项目解释器运行，避免依赖装好后当前进程却是系统 Python。
     if not inside_project_venv():
         say("切换到项目虚拟环境重新执行…\n")
-        subprocess.run([str(python), str(Path(__file__).resolve()), *arguments], cwd=str(ROOT))
-        return
+        result = subprocess.run([str(python), str(Path(__file__).resolve()), *arguments], cwd=str(ROOT))
+        sys.exit(result.returncode)
+
+    install_dependencies(python, force=force)
+    banner(port)
+
+    # 已经开着的话，直接打开页面，避免端口冲突；停住窗口，别一闪而过。
+    try:
+        with urllib.request.urlopen(health_url(port), timeout=1.0) as response:
+            if response.status == 200:
+                say(f"[提示] 服务已经在运行：http://127.0.0.1:{port}/webui/")
+                say("要重启的话，请先关掉原来那个控制台窗口（或结束占用的进程）。")
+                if not no_browser:
+                    webbrowser.open(f"http://127.0.0.1:{port}/webui/")
+                wait_for_enter("已经有一个实例在运行")
+                sys.exit(2)
+    except (urllib.error.URLError, OSError, ValueError):
+        pass
 
     code = run_server(python, port, no_browser=no_browser)
     if code:
         say(f"\n机器人退出，退出码 {code}。")
+        wait_for_enter("机器人异常退出")
 
 
 if __name__ == "__main__":
