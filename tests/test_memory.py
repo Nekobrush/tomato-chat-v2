@@ -1,7 +1,12 @@
-"""记忆存储测试：裁剪、持久化、未回复消息合并。"""
+"""记忆存储测试：裁剪、持久化、未回复消息合并、token 预算。"""
 
 import bot_config as cfg
-from bot_plugins.ai_chat.memory import DEFAULT_MARK, PERSISTENCE_MARK, MemoryStore
+from bot_plugins.ai_chat.memory import (
+    DEFAULT_MARK,
+    PERSISTENCE_MARK,
+    MemoryStore,
+    estimate_tokens,
+)
 
 
 def test_trim_keeps_newest() -> None:
@@ -77,3 +82,35 @@ def test_messages_shape() -> None:
         {"role": "system", "content": "设定"},
         {"role": "user", "content": "你好"},
     ]
+
+
+# ---------------------------------------------------------------------------
+# token 预算
+# ---------------------------------------------------------------------------
+
+
+def test_estimate_tokens_counts_cjk_higher() -> None:
+    assert estimate_tokens("") == 1
+    assert estimate_tokens("你好世界") > estimate_tokens("abcd")
+    assert estimate_tokens("abcd") >= 1
+
+
+def test_trim_to_tokens_keeps_latest_and_fits_budget() -> None:
+    store = MemoryStore(100)
+    for index in range(10):
+        store.append("g", "user", f"{index}:" + "很长的一段内容" * 10)
+    removed = store.trim_to_tokens("g", 120)
+    assert removed > 0
+    assert store.tokens("g") <= 120
+    # 最新的那条永远还在
+    assert "9:" in store.records("g")[-1].content
+
+
+def test_trim_to_tokens_keeps_persistence_record() -> None:
+    store = MemoryStore(100)
+    store.append("g", "system", "群设定", mark=PERSISTENCE_MARK)
+    for _ in range(10):
+        store.append("g", "user", "闲聊" * 20)
+    store.trim_to_tokens("g", 80)
+    marks = [r.mark for r in store.records("g")]
+    assert PERSISTENCE_MARK in marks

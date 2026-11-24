@@ -29,6 +29,10 @@ ALLOW_GROUPS = {"893"}
 #   api_key  可选，Bearer Token；本地服务留空即可
 #   model    候选模型列表（可用 chatset ss 自动同步）
 #   extra_body  可选，OpenAI 兼容源额外透传给接口的字段（如 top_k、repeat_penalty）
+#   context  可选，这个源自己的上下文长度，留空则用下面的 GLOBAL_CTX。
+#            本地小模型 8192、云端大模型 128K，可以各写各的，不用全局统一。
+#   concurrency  可选，这个源允许同时进行的生成数，默认 1（本地显存有限时串行更稳）。
+#            云端 API 或显存充裕（batching）时可以调大。
 MODELS = {
     "local": {
         "type": "ollama",
@@ -89,7 +93,11 @@ REPLY_PROBABILITY = 0.5
 NORMAL_USER_MAX_WATER_PROBABILITY = 0.125
 
 # ------------------------------- 记忆 -------------------------------
-MAX_MEMORY = 12            # 每个群最多保留的记忆条数
+MAX_MEMORY = 12            # 每个群最多保留的记忆条数（硬上限）
+# 每个群记忆最多占多少 token；0 表示按 GLOBAL_CTX 的 35% 自动估算。
+# 条数上限解决不了"长句占满上下文"，所以再按 token 预算裁一次：
+# 短句群能多留几条，长句群会自动少留。
+MEMORY_TOKEN_BUDGET = 0
 MERGE_MAX_LEN = 128        # 未回复的连续消息合并时，单条内容的最大长度
 
 # ------------------------------- 排队与合并 -------------------------------
@@ -205,6 +213,7 @@ _OVERLAY_SCALARS = {
     "REPLY_PROBABILITY": float,
     "NORMAL_USER_MAX_WATER_PROBABILITY": float,
     "MAX_MEMORY": int,
+    "MEMORY_TOKEN_BUDGET": int,
     "MERGE_MAX_LEN": int,
     "RESP_LEN_LIMIT": int,
     "SPLIT_PATTERN": str,

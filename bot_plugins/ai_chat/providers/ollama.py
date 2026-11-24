@@ -46,7 +46,7 @@ class OllamaProvider(ChatProvider):
     def options(self) -> Options:
         p = self.params
         options = Options(
-            num_ctx=p.num_ctx,
+            num_ctx=self.context,
             repeat_penalty=p.repeat_penalty,
             num_predict=p.max_tokens,
             temperature=p.temperature,
@@ -56,6 +56,20 @@ class OllamaProvider(ChatProvider):
         if p.stop:
             options["stop"] = list(p.stop)
         return options
+
+    async def probe_vision(self, model: str) -> bool | None:
+        """查 ollama 的 /api/show：新版会在 capabilities 里列 vision。"""
+        try:
+            info = await self._client.show(model)
+        except Exception:  # noqa: BLE001 - 探测失败就交给名字启发式
+            return None
+        data = info if isinstance(info, dict) else {}
+        capabilities = data.get("capabilities")
+        if isinstance(capabilities, list):
+            names = {str(item).lower() for item in capabilities}
+            return bool(names & {"vision", "multimodal", "image"})
+        # 老版本 ollama 没有 capabilities，但带视觉投影层的一定能看图
+        return True if data.get("projector_info") else None
 
     async def list_models(self) -> list[str]:
         try:

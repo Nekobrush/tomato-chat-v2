@@ -129,6 +129,19 @@ def _strip_timestamp(content: str) -> str:
     return _TIMESTAMP_PREFIX.sub("", content, count=1)
 
 
+def memory_budget() -> int:
+    """记忆能占多少 token。
+
+    `MAX_MEMORY` 只是条数上限，短句和长句占的空间差很多；这里再给一个
+    与上下文长度挂钩的预算：配置为 0 时按 `GLOBAL_CTX` 的 35% 估算。
+    """
+    configured = int(getattr(cfg, "MEMORY_TOKEN_BUDGET", 0) or 0)
+    if configured > 0:
+        return configured
+    ctx = int(getattr(cfg, "GLOBAL_CTX", 8192) or 8192)
+    return max(512, int(ctx * 0.35))
+
+
 def build_messages(
     group_id: str,
     bot_id: int | str,
@@ -148,6 +161,8 @@ def build_messages(
 
     这样缓存命中的是「人设 + few-shot + 历史」，每轮只需 prefill 新增的那一两条。
     """
+    # 条数上限之外再按 token 预算裁一次：长句群里自动少留几条，短句群能多留
+    store.trim_to_tokens(group_id, memory_budget())
     records = store.records(group_id)
 
     persistent_system = [

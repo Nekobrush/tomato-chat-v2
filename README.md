@@ -92,12 +92,13 @@ python launcher.py --port 9000     # 临时换端口
 | --- | --- |
 | `AI_NAME` | 机器人自称的出厂默认值；改名字在网页「人格与提示词」里改，会写进 `webui_prompts.json` |
 | `ALLOW_GROUPS` | 允许工作的群号集合，**必须把群号写进来**；留空则机器人不理会任何群 |
-| `MODELS` | 模型源表，每项支持 `type`（`ollama` / `openai`）、`label`、`url`、`api_key`、`model`、`extra_body` |
+| `MODELS` | 模型源表，每项支持 `type`（`ollama` / `openai`）、`label`、`url`、`api_key`、`model`、`extra_body`、`context`、`concurrency`、`vision` |
 | `DEFAULT_SOURCE` / `DEFAULT_MODEL_INDEX` | 默认模型源与默认模型下标 |
-| `GLOBAL_CTX` / `PREDICT` / `TEMPERATURE` / `TOP_K` / `TOP_P` / `REPEAT_PENALTY` | 生成参数；`GLOBAL_CTX`/`TOP_K`/`REPEAT_PENALTY` 只对 ollama 直接生效，OpenAI 兼容源需在模型源里开启 `send_sampling` 或写进 `extra_body` |
+| `GLOBAL_CTX` / `PREDICT` / `TEMPERATURE` / `TOP_K` / `TOP_P` / `REPEAT_PENALTY` | 生成参数；`GLOBAL_CTX`/`TOP_K`/`REPEAT_PENALTY` 只对 ollama 直接生效，OpenAI 兼容源需在模型源里开启 `send_sampling` 或写进 `extra_body`；`GLOBAL_CTX` 是默认值，单个源可用 `context` 覆盖 |
 | `STOP_SEQUENCES` | 解码停止串，默认 `("\n",)`：提示词要求单行、结尾一个情绪标记，遇到换行就停能少生成不少 token |
 | `LOG_USAGE` | 每次调用后打印 `prompt/completion/耗时/tok/s`，方便本地对比优化效果 |
-| `MAX_MEMORY` | 每群记忆条数 |
+| `MAX_MEMORY` | 每群记忆条数上限 |
+| `MEMORY_TOKEN_BUDGET` | 每群记忆的 token 预算，`0` = 按 `GLOBAL_CTX` 的 35% 自动估算；长句群会自动少留几条 |
 | `PENDING_DEBOUNCE` | 收到 @ 后先等多久（秒），把同一波连发合并成一条待办，默认 0.4 |
 | `PENDING_TTL` | 待办超过多少秒还没轮到就丢弃，避免回一句过时的话，默认 20 |
 | `PENDING_TEXT_LIMIT` | 同一个人的多条消息合并后最多保留多少字符，默认 200 |
@@ -149,6 +150,9 @@ MODELS = {
 - OpenAI 兼容源会自动补齐地址结尾的 `/v1`。
 - `api_key` 非空时自动带上 `Authorization: Bearer <api_key>`。
 - `extra_body` 里的字段会原样合并进请求体，用来传各家的专有参数。
+- `context` 可选：这个源自己的上下文长度。本地小模型写 `8192`、云端大模型写 `131072`，互不影响；不写就用全局 `GLOBAL_CTX`。
+- `concurrency` 可选：这个源允许同时进行的生成数，默认 `1`。本地单卡保持 1（显存和速度都更稳），云端 API 可以调大。
+- `vision` 可选：`true` / `false` / `["qwen3.5-9b"]` / `"*"`，见下面的「多模态」。
 - 推理模型（DeepSeek-R1、Qwen3 思考模式）默认「先思考再回答」，128 token 会被思考内容吃光。LM Studio 可加 `"extra_body": {"reasoning_effort": "none"}` 关闭思考，或调大 `PREDICT`。
 - 切换源：`chatset s <源>`；同步模型列表：`chatset ss [源]`（ollama 调 `/api/tags`，OpenAI 兼容调 `/v1/models`）。
 
@@ -242,9 +246,13 @@ http://127.0.0.1:8765/webui/
 
 ### 多模态（看图）
 
-机器人能不能看图，取决于**当前模型**有没有视觉能力。LM Studio / ollama 不会在接口里声明这个能力，所以默认按模型名匹配（`VISION_MODEL_PATTERNS`：`vl`、`vision`、`llava`、`qwen2.5-vl`、`gpt-4o`、`claude`、`gemini` 等）。
+机器人能不能看图，取决于**当前模型**有没有视觉能力。判断分三层，优先级从高到低：
 
-名字对不上、或者你想强行指定时，在模型源里写 `vision`（网页「模型与设置 › 模型源」里有「能看图的模型」输入框）：
+1. 模型源里的 `vision` 配置（想强行指定时用）；
+2. 向服务端探测：LM Studio 查 `/api/v0/models` 的 `type=vlm`，ollama 查 `/api/show` 的 `capabilities`（探测一次后缓存，失败最多等 3 秒）；
+3. 都拿不到时按模型名匹配（`VISION_MODEL_PATTERNS`：`vl`、`vision`、`llava`、`qwen2.5-vl`、`gpt-4o`、`claude`、`gemini` 等）。
+
+所以 LM Studio 里 `type=vlm` 的模型不用手写配置就能被识别；名字对不上或者想强行指定时，在模型源里写 `vision`（网页「模型与设置 › 模型源」里有「能看图的模型」输入框）：
 
 ```python
 "lmstudio": {
@@ -276,7 +284,7 @@ http://127.0.0.1:8765/webui/
 
 图片会在锁内、确定要生成时才下载并转 base64，只挂在最后一条 user 消息上（不会把历史里的图重复塞进 prompt）。ollama 走 `images` 字段，OpenAI 兼容源走 `image_url` + `data:` URL。
 
-> 当前默认模型 `qwen3.5-9b@q6_k` 是纯文本模型，所以这项功能是「待命」状态；换成 VL 模型（或用 `lms load` 起一个）后自动生效，不需要改代码。
+> 当前默认模型 `qwen3.5-9b@q6_k` 在 LM Studio 里是 `type=vlm`，会被自动识别为多模态；如果换的模型是纯文本的，这项功能自动退回「忽略图片」，不需要改代码。
 
 
 ### 刷新行为
@@ -374,7 +382,7 @@ tomato-chat/
 pytest -q
 ```
 
-当前 198 个用例全部通过，覆盖指令解析、记忆裁剪/合并、模型切换与同步、两种模型后端的请求/错误处理、生成流程、提示词前缀稳定性、回复排队与合并、私聊（配置开关与白名单）、多模态图片链路与触发规则、WebUI 的配置校验与接口，以及插件冒烟。
+当前 221 个用例全部通过，覆盖指令解析、记忆裁剪/合并、模型切换与同步、两种模型后端的请求/错误处理、生成流程、提示词前缀稳定性、回复排队与合并、私聊（配置开关与白名单）、多模态图片链路与触发规则、WebUI 的配置校验与接口，以及插件冒烟。
 
 ### 本地性能测量
 

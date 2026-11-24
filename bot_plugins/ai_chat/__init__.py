@@ -73,9 +73,11 @@ command_matcher.handle()(handle_command)
 # ---------------------------------------------------------------------------
 
 
-def _vision_ready() -> bool:
-    """当前模型能不能看图（总开关 + 模型能力）。"""
-    return bool(cfg.VISION_ENABLED) and llm.supports_vision
+async def _vision_ready() -> bool:
+    """当前模型能不能看图：总开关 + 服务端探测（探测一次后缓存）。"""
+    if not bool(cfg.VISION_ENABLED):
+        return False
+    return await llm.async_supports_vision()
 
 
 @chat_matcher.handle()
@@ -87,7 +89,7 @@ async def handle_group_message(bot: Bot, event: GroupMessageEvent) -> None:
 
     text = segments_to_text(event.message, event.self_id)
     # 模型看不懂图时，按老行为处理：纯图片消息直接忽略
-    sources = image_sources(event.message) if _vision_ready() else []
+    sources = image_sources(event.message) if await _vision_ready() else []
     if not text and not sources:
         return
 

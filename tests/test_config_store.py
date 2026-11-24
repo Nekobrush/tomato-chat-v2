@@ -192,3 +192,15 @@ def test_models_keep_vision_override(sandbox):
     assert merged["MODELS"]["remote"]["vision"] == ["qwen3.5-9b"]
     assert merged["MODELS"]["all-vision"]["vision"] is True
     assert merged["MODELS"]["no-vision"]["vision"] is False
+
+
+def test_memory_token_budget_roundtrip(sandbox) -> None:
+    merged, restart = config_store.save({"MEMORY_TOKEN_BUDGET": 2048})
+    assert merged["MEMORY_TOKEN_BUDGET"] == 2048
+    assert cfg.MEMORY_TOKEN_BUDGET == 2048
+    assert restart == []
+
+
+def test_memory_token_budget_must_not_be_negative(sandbox) -> None:
+    with pytest.raises(config_store.ConfigError):
+        config_store.save({"MEMORY_TOKEN_BUDGET": -1})

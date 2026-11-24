@@ -6,11 +6,14 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 import bot_config as cfg
 
 DEFAULT_MARK = "default"
+# 中文约 1.7 字/token、英文约 4 字符/token；估算只用于裁剪，不要求精确
+_CJK_PATTERN = re.compile(r"[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]")
 PERSISTENCE_MARK = "persistence"
 # 生成后追加的纠错提示：只对下一轮有意义，不需要每轮都堆在提示词里
 TIP_MARK = "tip"
@@ -24,6 +27,17 @@ class Record:
 
     def to_message(self) -> dict[str, str]:
         return {"role": self.role, "content": self.content}
+
+
+def estimate_tokens(text: str) -> int:
+    """粗略估算一段文本占多少 token。
+
+    只用于"记忆该留多少条"这类预算判断，不追求与真实 tokenizer 一致：
+    中日韩字符按 0.6 token/字，其它字符按 0.25 token/字（约 4 字符/token）。
+    """
+    cjk = len(_CJK_PATTERN.findall(text))
+    others = max(0, len(text) - cjk)
+    return int(cjk * 0.6 + others * 0.25) + 1
 
 
 def _truncate(content: str) -> str:
@@ -87,6 +101,38 @@ class MemoryStore:
         records.append(record)
         self._trim(group_id, self._max_record)
         return record
+
+    # ------------------------------------------------------------------ 预算
+    def tokens(self, group_id: str) -> int:
+        """估算该群当前记忆占用的 token（含每条 4 token 的角色/分隔开销）。"""
+        return sum(
+            estimate_tokens(record.content) + 4
+            for record in self._records.get(group_id, [])
+        )
+
+    def trim_to_tokens(self, group_id: str, budget: int) -> int:
+        """按 token 预算裁剪，返回删掉的条数。
+
+        `MAX_MEMORY` 是条数上限、这条是字节量上限：短句群里能留更多条，
+        长句群里会自动少留几条。持久化记录仍然优先保留。
+        """
+        if budget <= 0:
+            return 0
+        records = self._records.get(group_id)
+        removed = 0
+        while records and self.tokens(group_id) > budget:
+            for index, record in enumerate(records):
+                if record.mark != PERSISTENCE_MARK:
+                    del records[index]
+                    removed += 1
+                    break
+            else:
+                # 只剩持久化记录时保留最后一条，避免把群设定裁空
+                if len(records) <= 1:
+                    break
+                records.pop(0)
+                removed += 1
+        return removed
 
     # ------------------------------------------------------------------ 查询
     def messages(self, group_id: str) -> list[dict[str, str]]:

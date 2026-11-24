@@ -75,6 +75,30 @@ class ChatProvider(ABC):
         key = self.spec.get("api_key")
         return str(key).strip() if key else ""
 
+    @property
+    def context(self) -> int:
+        """这个模型源的上下文长度。
+
+        不再假定所有源都和 `GLOBAL_CTX` 一致：源里写了 `context` 就用它，
+        没写才回落到全局配置，方便一个机器人同时挂本地小模型和云端大模型。
+        """
+        raw = self.spec.get("context")
+        try:
+            configured = int(raw) if raw is not None else 0
+        except (TypeError, ValueError):
+            configured = 0
+        if configured > 0:
+            return configured
+        return int(self.params.num_ctx or getattr(cfg, "GLOBAL_CTX", 8192) or 8192)
+
+    async def probe_vision(self, model: str) -> bool | None:
+        """向服务端询问这个模型是否支持图片。
+
+        问不到（接口不存在、网络失败、老版本服务）就返回 None，
+        由 `supports_vision` 按名字启发式兜底。
+        """
+        return None
+
     def supports_vision(self, model: str | None = None) -> bool:
         """这个模型能不能看图。
 

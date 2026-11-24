@@ -932,7 +932,7 @@
     { title: "模型", keys: ["MODELS", "DEFAULT_SOURCE", "DEFAULT_MODEL_INDEX"], desc: "ollama 和 OpenAI 兼容（LM Studio / DeepSeek / OneAPI）都可以。" },
     { title: "生成参数", keys: ["GLOBAL_CTX", "PREDICT", "TEMPERATURE", "TOP_K", "TOP_P", "REPEAT_PENALTY", "REQUEST_TIMEOUT"], desc: "决定回复的长度和风格，改完立刻生效。" },
     { title: "行为概率", keys: ["DEFAULT_WATER_PROBABILITY", "SEND_IMAGE_PROBABILITY", "REPLY_PROBABILITY", "NORMAL_USER_MAX_WATER_PROBABILITY", "MERGE_MAX_LEN", "RESP_LEN_LIMIT"], desc: "水群、发图、引用回复和合并消息的规则。" },
-    { title: "记忆", keys: ["MAX_MEMORY"], desc: "每个群保留多少条上下文。" },
+    { title: "记忆", keys: ["MAX_MEMORY", "MEMORY_TOKEN_BUDGET"], desc: "每个群保留多少条上下文，以及最多占多少 token。" },
   ];
 
   function fieldByKey(key) {
@@ -1039,6 +1039,8 @@
         ${group.keys
           .map((key) => {
             const field = fieldByKey(key);
+            // 后端还没重启 / 老版本 API 可能没有这个字段，跳过而不是整页报错
+            if (!field) return "";
             return `
           <div class="setting">
             <div>

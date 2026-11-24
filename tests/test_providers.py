@@ -428,3 +428,80 @@ def test_supports_vision_wildcard_and_off_strings() -> None:
     assert _openai({"vision": "all"}).supports_vision("anything") is True
     assert _openai({"vision": "off"}).supports_vision("qwen2.5-vl-7b") is False
     assert _openai({"vision": "qwen3.5-9b,qwen2.5-vl"}).supports_vision("qwen3.5-9b@q6_k") is True
+
+
+# ---------------------------------------------------------------------------
+# 每源上下文 / 并发度 / 能力探测
+# ---------------------------------------------------------------------------
+
+
+def test_provider_context_falls_back_to_params() -> None:
+    assert _openai().context == PARAMS.num_ctx
+    assert _ollama().context == PARAMS.num_ctx
+    assert _openai({"context": 32768}).context == 32768
+
+
+def test_ollama_num_ctx_follows_source_context() -> None:
+    provider = OllamaProvider(
+        "local",
+        {"url": "http://127.0.0.1:1", "model": ["m"], "context": 4096},
+        params=PARAMS,
+        timeout=5,
+    )
+    assert dict(provider.options)["num_ctx"] == 4096
+
+
+async def test_openai_probe_vision_reads_lmstudio_metadata() -> None:
+    provider = _openai()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "http://test.local/api/v0/models"
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"id": "text-1", "type": "llm"},
+                    {"id": "vl-1", "type": "vlm"},
+                ]
+            },
+        )
+
+    await _install(provider, handler)
+    assert await provider.probe_vision("vl-1") is True
+    assert await provider.probe_vision("text-1") is False
+
+
+async def test_openai_probe_vision_missing_endpoint() -> None:
+    provider = _openai()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "not found"})
+
+    await _install(provider, handler)
+    # 探测不到就返回 None，交给名字启发式
+    assert await provider.probe_vision("anything") is None
+
+
+async def test_ollama_probe_vision_uses_capabilities() -> None:
+    provider = _ollama()
+
+    class Fake:
+        def __init__(self, capabilities=None) -> None:
+            self.capabilities = capabilities
+
+        async def show(self, model):
+            return {"capabilities": self.capabilities} if self.capabilities else {}
+
+    provider._client = Fake(["completion", "vision"])
+    assert await provider.probe_vision("m") is True
+
+    provider._client = Fake(["completion"])
+    assert await provider.probe_vision("m") is False
+
+    class Broken:
+        async def show(self, model):
+            raise ConnectionError("refused")
+
+    provider._client = Broken()
+    assert await provider.probe_vision("m") is None
+

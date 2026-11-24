@@ -194,7 +194,10 @@ async def test_plain_message_pure_image_ignored(plugin, monkeypatch: pytest.Monk
     from nonebot.adapters.onebot.v11 import MessageSegment
 
     # 模型不支持看图时，行为退回旧版：纯图片消息直接忽略
-    monkeypatch.setattr(plugin, "_vision_ready", lambda: False)
+    async def not_ready() -> bool:
+        return False
+
+    monkeypatch.setattr(plugin, "_vision_ready", not_ready)
 
     bot = FakeBot()
     event = make_event(message=Message(MessageSegment.image("a.jpg")))
@@ -330,7 +333,10 @@ def _patch_vision(plugin, monkeypatch: pytest.MonkeyPatch, parts=None) -> list[d
         seen.append({"sources": list(sources)})
         return payload
 
-    monkeypatch.setattr(plugin, "_vision_ready", lambda: True)
+    async def ready() -> bool:
+        return True
+
+    monkeypatch.setattr(plugin, "_vision_ready", ready)
     monkeypatch.setattr(vision, "load_parts", fake_load)
     return seen
 

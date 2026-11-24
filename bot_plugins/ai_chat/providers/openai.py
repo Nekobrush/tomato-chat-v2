@@ -134,6 +134,35 @@ class OpenAICompatibleProvider(ChatProvider):
             raise LLMError(f"{self.base_url} 没有返回任何模型喵")
         return models
 
+    # ------------------------------------------------------------------ 能力探测
+    @property
+    def api_root(self) -> str:
+        """`.../v1` 的上一层，LM Studio 的元信息接口不在 /v1 下面。"""
+        return self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
+
+    async def probe_vision(self, model: str) -> bool | None:
+        """LM Studio 的 /api/v0/models 会给出 type=vlm；通用 OpenAI 接口没有这个。"""
+        try:
+            response = await self._client.get(f"{self.api_root}/api/v0/models")
+            if response.status_code >= 400:
+                return None
+            data = response.json()
+        except (httpx.HTTPError, ValueError):
+            return None
+        entries = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(entries, list):
+            return None
+        for entry in entries:
+            if not isinstance(entry, dict) or entry.get("id") != model:
+                continue
+            if entry.get("type") == "vlm":
+                return True
+            capabilities = entry.get("capabilities")
+            if isinstance(capabilities, list):
+                return any(str(item).lower() == "vision" for item in capabilities)
+            return False
+        return None
+
     async def chat(self, model: str, messages: list[dict[str, Any]]) -> str:
         payload: dict[str, Any] = {
             "model": model,

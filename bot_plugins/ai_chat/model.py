@@ -28,8 +28,11 @@ class LLMService:
         self._sources = sources
         self.params = GenerationParams.from_config()
         self._providers: dict[str, ChatProvider] = {}
-        # 本地小模型串行生成更稳定，也避免并发把记忆顺序打乱
-        self._lock = asyncio.Lock()
+        # 每个模型源一个信号量：默认 1（本地小模型串行更稳），
+        # 云端或显存充裕时可以在该源的配置里写 "concurrency": N 放开并发。
+        self._semaphores: dict[str, asyncio.Semaphore] = {}
+        # 视觉能力探测结果缓存：{(源, 模型): 能不能看图}
+        self._vision_cache: dict[tuple[str, str], bool] = {}
 
         available = self.sources
         default = cfg.DEFAULT_SOURCE
@@ -73,11 +76,44 @@ class LLMService:
 
     @property
     def supports_vision(self) -> bool:
-        """当前模型能不能看图（由 provider 按模型名或配置判断）。"""
+        """当前模型能不能看图（先用探测缓存，没探测过就按名字/配置判断）。"""
         try:
-            return self.provider.supports_vision(self.model)
+            model = self.model
         except LLMError:
             return False
+        cached = self._vision_cache.get((self.source, model))
+        if cached is not None:
+            return cached
+        return self.provider.supports_vision(model)
+
+    async def async_supports_vision(self, model: str | None = None) -> bool:
+        """问一次服务端这个模型是否支持图片，并把结果缓存住。
+
+        探测失败（接口不存在等）时回落到配置/名字启发式，行为与原来一致。
+        """
+        try:
+            target = model or self.model
+        except LLMError:
+            return False
+        key = (self.source, target)
+        cached = self._vision_cache.get(key)
+        if cached is not None:
+            return cached
+        provider = self.provider
+        probed: bool | None = None
+        try:
+            # 探测只是锦上添花：服务端卡住时最多等 3 秒，然后按名字判断
+            probed = await asyncio.wait_for(provider.probe_vision(target), timeout=3.0)
+        except Exception as exc:  # noqa: BLE001 - 探测失败不影响正常聊天
+            logger.debug(f"探测 {target} 的视觉能力失败：{exc}")
+        value = probed if probed is not None else provider.supports_vision(target)
+        self._vision_cache[key] = value
+        return value
+
+    @property
+    def context(self) -> int:
+        """当前模型源的上下文长度（源里配置的 context，缺省回落到 GLOBAL_CTX）。"""
+        return self.provider.context
 
     def _clamp_index(self) -> None:
         count = len(self.models)
@@ -96,6 +132,18 @@ class LLMService:
             self._providers[source] = provider
         return provider
 
+    def _semaphore_for(self, source: str) -> asyncio.Semaphore:
+        semaphore = self._semaphores.get(source)
+        if semaphore is None:
+            spec = self.sources.get(source) or {}
+            try:
+                limit = max(1, int(spec.get("concurrency", 1) or 1))
+            except (TypeError, ValueError):
+                limit = 1
+            semaphore = asyncio.Semaphore(limit)
+            self._semaphores[source] = semaphore
+        return semaphore
+
     @property
     def provider(self) -> ChatProvider:
         if not self.source:
@@ -110,6 +158,8 @@ class LLMService:
             except Exception as exc:  # noqa: BLE001 - 关闭失败只记日志
                 logger.debug(f"关闭模型源 {name} 失败：{exc}")
         self._providers.clear()
+        self._semaphores.clear()
+        self._vision_cache.clear()
 
     def refresh_params(self) -> None:
         """重新读取生成参数，让网页里改的数值立即生效。"""
@@ -168,6 +218,7 @@ class LLMService:
         spec = self.spec
         lines = [f"当前模型源：{self.source}（{self.label}）"]
         lines.append(f"地址：{spec.get('url')}（{self.kind}）")
+        lines.append(f"上下文：{self.provider.context} token")
 
         models = self.models
         if models:
@@ -189,8 +240,9 @@ class LLMService:
     ) -> str:
         """调用模型生成回复，返回非空文本；失败抛出 LLMError。"""
         target = model or self.model
-        provider = self.provider
-        async with self._lock:
+        source = self.source
+        provider = self._provider_for(source)
+        async with self._semaphore_for(source):
             try:
                 content = await provider.chat(target, messages)
             except LLMError:

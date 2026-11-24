@@ -153,3 +153,59 @@ def test_generation_params_from_config() -> None:
     assert params.max_tokens == cfg.PREDICT
     assert params.num_ctx == cfg.GLOBAL_CTX
     assert params.repeat_penalty == cfg.REPEAT_PENALTY
+
+
+# ---------------------------------------------------------------------------
+# 按源并发
+# ---------------------------------------------------------------------------
+
+
+def test_semaphore_limit_defaults_to_one() -> None:
+    service = _service()
+    assert service._semaphore_for("local")._value == 1
+
+
+def test_semaphore_limit_follows_source_config() -> None:
+    service = _service(cloud={"type": "openai", "url": "http://127.0.0.1:9", "model": ["m"], "concurrency": 3})
+    assert service._semaphore_for("cloud")._value == 3
+
+
+async def test_chat_runs_concurrently_when_source_allows(monkeypatch) -> None:
+    import asyncio
+
+    service = _service(
+        cloud={"type": "openai", "url": "http://127.0.0.1:9", "model": ["m"], "concurrency": 2}
+    )
+    service.switch_source("cloud")
+    active = {"now": 0, "peak": 0}
+
+    async def fake_chat(model, messages):
+        active["now"] += 1
+        active["peak"] = max(active["peak"], active["now"])
+        await asyncio.sleep(0.05)
+        active["now"] -= 1
+        return "ok"
+
+    monkeypatch.setattr(service.provider, "chat", fake_chat)
+    messages = [{"role": "user", "content": "hi"}]
+    await asyncio.gather(*(service.chat(messages) for _ in range(2)))
+    assert active["peak"] == 2
+
+
+async def test_chat_serializes_by_default(monkeypatch) -> None:
+    import asyncio
+
+    service = _service()
+    active = {"now": 0, "peak": 0}
+
+    async def fake_chat(model, messages):
+        active["now"] += 1
+        active["peak"] = max(active["peak"], active["now"])
+        await asyncio.sleep(0.03)
+        active["now"] -= 1
+        return "ok"
+
+    monkeypatch.setattr(service.provider, "chat", fake_chat)
+    messages = [{"role": "user", "content": "hi"}]
+    await asyncio.gather(*(service.chat(messages) for _ in range(3)))
+    assert active["peak"] == 1

@@ -288,3 +288,31 @@ def test_build_messages_without_images_has_no_image_key() -> None:
     messages = pipeline.build_messages(group_id, 10000)
     assert all("images" not in message for message in messages)
     pipeline.reset_group(group_id)
+
+
+# ---------------------------------------------------------------------------
+# 记忆 token 预算
+# ---------------------------------------------------------------------------
+
+
+def test_memory_budget_defaults_to_context_share(monkeypatch) -> None:
+    monkeypatch.setattr(cfg, "MEMORY_TOKEN_BUDGET", 0)
+    monkeypatch.setattr(cfg, "GLOBAL_CTX", 8192)
+    assert pipeline.memory_budget() == int(8192 * 0.35)
+
+
+def test_memory_budget_uses_configured_value(monkeypatch) -> None:
+    monkeypatch.setattr(cfg, "MEMORY_TOKEN_BUDGET", 700)
+    assert pipeline.memory_budget() == 700
+
+
+def test_build_messages_trims_memory_to_budget(monkeypatch) -> None:
+    monkeypatch.setattr(cfg, "MEMORY_TOKEN_BUDGET", 90)
+    group = "budget-check"
+    pipeline.store.clear(group)
+    for index in range(8):
+        pipeline.store.append(group, "user", f"[{index}]a(1):\n" + "很长的内容" * 10)
+    messages = pipeline.build_messages(group, 10000)
+    assert pipeline.store.tokens(group) <= 90
+    assert messages[0]["role"] == "system"
+    pipeline.store.clear(group)
