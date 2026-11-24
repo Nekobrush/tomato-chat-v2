@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from nonebot import on_message
 from nonebot.adapters import Event
 from nonebot.adapters.onebot.v11 import Bot, PrivateMessageEvent
@@ -56,7 +58,7 @@ async def handle_private_message(bot: Bot, event: PrivateMessageEvent) -> None:
 
     async with pipeline.group_lock(key):
         try:
-            message = await pipeline.generate_reply(
+            messages = await pipeline.generate_reply(
                 key,
                 event.self_id,
                 reply_id=None,
@@ -67,7 +69,10 @@ async def handle_private_message(bot: Bot, event: PrivateMessageEvent) -> None:
             await bot.send_private_msg(user_id=event.user_id, message=pipeline.fail_tip())
             return
 
-    await bot.send_private_msg(user_id=event.user_id, message=message)
+    for index, message in enumerate(messages):
+        if index:
+            await asyncio.sleep(max(0.0, float(cfg.SPLIT_DELAY)))
+        await bot.send_private_msg(user_id=event.user_id, message=message)
 
 
 __all__ = ["handle_private_message", "memory_key", "private_matcher"]

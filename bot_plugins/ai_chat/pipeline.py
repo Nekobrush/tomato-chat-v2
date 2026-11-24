@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from nonebot.log import logger
 
 import bot_config as cfg
 
@@ -264,24 +265,74 @@ def collect_tips(text: str, emotions: list[str]) -> str:
     return "\n".join(tips)
 
 
-def compose_message(text: str, emotions: list[str], reply_id: int | None) -> Message:
-    message = Message()
-    if reply_id is not None and random.random() < cfg.REPLY_PROBABILITY:
-        message.append(MessageSegment.reply(reply_id))
+def _hard_split(text: str, limit: int) -> list[str]:
+    """把超长的一段按 limit 硬切开，尽量落在句末标点上。"""
+    pieces: list[str] = []
+    rest = text
+    while len(rest) > limit:
+        window = rest[:limit]
+        cut = max(window.rfind(char) for char in _SENTENCE_ENDINGS)
+        if cut < limit // 2:
+            cut = limit
+        else:
+            cut += 1
+        pieces.append(rest[:cut])
+        rest = rest[cut:]
+    if rest:
+        pieces.append(rest)
+    return pieces
 
-    body = prompts.decorate(text or prompts.EMPTY_REPLY)
+
+def split_reply(text: str) -> list[str]:
+    """按配置把一条回复切成多条气泡（留空 / 0 表示不切）。"""
+    chunks = [text]
+    pattern = (cfg.SPLIT_PATTERN or "").strip()
+    if pattern:
+        try:
+            compiled = re.compile(pattern)
+        except re.error as exc:  # 配置里写坏了就退化成整条发送
+            logger.warning(f"分条正则 {pattern!r} 无效，已忽略：{exc}")
+        else:
+            chunks = [piece for chunk in chunks for piece in compiled.split(chunk)]
+
+    limit = int(cfg.SPLIT_MAX_CHARS or 0)
+    if limit > 0:
+        chunks = [piece for chunk in chunks for piece in _hard_split(chunk, limit)]
+
+    return [piece for piece in (item.strip() for item in chunks) if piece]
+
+
+def compose_messages(text: str, emotions: list[str], reply_id: int | None) -> list[Message]:
+    """把回复组装成一条或多条消息；分条时第一段带引用和配图。"""
+    chunks = split_reply(text or prompts.EMPTY_REPLY)
+    if not chunks:
+        chunks = [prompts.EMPTY_REPLY]
+
     emotion = random.choice(emotions) if emotions else None
     image = pick_emotion_image(emotion)
+    use_image = image is not None and random.random() < cfg.SEND_IMAGE_PROBABILITY
 
-    if image is not None and random.random() < cfg.SEND_IMAGE_PROBABILITY:
-        image_segment = MessageSegment.image(image)
-        if random.random() < 0.5:
-            message.extend([image_segment, MessageSegment.text(body)])
+    messages: list[Message] = []
+    for index, chunk in enumerate(chunks):
+        message = Message()
+        if index == 0 and reply_id is not None and random.random() < cfg.REPLY_PROBABILITY:
+            message.append(MessageSegment.reply(reply_id))
+        body = prompts.decorate(chunk)
+        if index == 0 and use_image:
+            image_segment = MessageSegment.image(image)
+            if random.random() < 0.5:
+                message.extend([image_segment, MessageSegment.text(body)])
+            else:
+                message.extend([MessageSegment.text(body), image_segment])
         else:
-            message.extend([MessageSegment.text(body), image_segment])
-    else:
-        message.append(MessageSegment.text(body))
-    return message
+            message.append(MessageSegment.text(body))
+        messages.append(message)
+    return messages
+
+
+def compose_message(text: str, emotions: list[str], reply_id: int | None) -> Message:
+    """兼容旧调用：只返回第一条消息。"""
+    return compose_messages(text, emotions, reply_id)[0]
 
 
 async def generate_reply(
@@ -291,8 +342,8 @@ async def generate_reply(
     *,
     focus: str | None = None,
     note: str | None = None,
-) -> Message:
-    """调用模型并返回可直接发送的 Message。调用方必须持有该群的锁。"""
+) -> list[Message]:
+    """调用模型并返回可直接发送的消息列表。调用方必须持有该群的锁。"""
     messages = build_messages(group_id, bot_id, focus=focus, note=note)
     raw = await llm.chat(messages)
 
@@ -316,4 +367,4 @@ async def generate_reply(
     if tips:
         store.append(group_id, "system", "\n".join(tips), mark=TIP_MARK)
 
-    return compose_message(cleaned, emotions, reply_id)
+    return compose_messages(cleaned, emotions, reply_id)

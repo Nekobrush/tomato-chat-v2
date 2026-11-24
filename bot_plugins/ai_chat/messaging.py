@@ -2,15 +2,26 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageSegment
 from nonebot.log import logger
 
+import bot_config as cfg
 from . import pipeline
 from .errors import LLMError
 
 
 async def send(bot: Bot, event: GroupMessageEvent, message: Message | str) -> None:
     await bot.send_group_msg(group_id=event.group_id, message=message)
+
+
+async def send_all(bot: Bot, event: GroupMessageEvent, messages: list[Message]) -> None:
+    """依次发送多条气泡，中间按配置停顿。"""
+    for index, message in enumerate(messages):
+        if index:
+            await asyncio.sleep(max(0.0, float(cfg.SPLIT_DELAY)))
+        await send(bot, event, message)
 
 
 async def reply_text(bot: Bot, event: GroupMessageEvent, text: str) -> None:
@@ -33,7 +44,7 @@ async def chat_and_reply(
     """
     group_id = str(event.group_id)
     try:
-        message = await pipeline.generate_reply(
+        messages = await pipeline.generate_reply(
             group_id,
             event.self_id,
             reply_id=event.message_id,
@@ -43,7 +54,7 @@ async def chat_and_reply(
         if not silent:
             await reply_text(bot, event, pipeline.fail_tip())
         return
-    await send(bot, event, message)
+    await send_all(bot, event, messages)
 
 
 def merge_pending(group_id: str) -> None:

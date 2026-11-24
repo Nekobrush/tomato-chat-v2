@@ -133,6 +133,13 @@ COMMANDS = {"chat", "chatsys", "chatcls", "chatstart", "chatstop", "chatset"}
 # 回复长度超过这个值时，往记忆里塞一条“缩短”提示
 RESP_LEN_LIMIT = 75
 
+# 分条发送：把一条回复切成多条消息气泡，中间停顿一下再发下一条
+# SPLIT_PATTERN 是正则（留空表示不按正则切），SPLIT_MAX_CHARS 是每条的字符上限
+# （0 表示不按字数截断），两个都关闭时就是整条发出去。
+SPLIT_PATTERN = ""
+SPLIT_MAX_CHARS = 0
+SPLIT_DELAY = 0.8
+
 
 # ------------------------------- WebUI 覆盖 -------------------------------
 # 网页控制台保存设置时会写这个文件；存在时用它覆盖上面的同名配置，
@@ -159,6 +166,9 @@ _OVERLAY_SCALARS = {
     "MAX_MEMORY": int,
     "MERGE_MAX_LEN": int,
     "RESP_LEN_LIMIT": int,
+    "SPLIT_PATTERN": str,
+    "SPLIT_MAX_CHARS": int,
+    "SPLIT_DELAY": float,
 }
 
 

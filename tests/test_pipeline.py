@@ -23,8 +23,8 @@ async def test_generate_reply_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     group_id = "test-ok"
     pipeline.reset_group(group_id)
 
-    message = await pipeline.generate_reply(group_id, 10000, reply_id=1)
-    assert message.extract_plain_text() == "你好喵"
+    messages = await pipeline.generate_reply(group_id, 10000, reply_id=1)
+    assert messages[0].extract_plain_text() == "你好喵"
     records = pipeline.store.records(group_id)
     assert [r.role for r in records] == ["assistant"]
     assert "--*happy*--" in records[0].content
@@ -35,8 +35,8 @@ async def test_generate_reply_adds_tip_when_no_emotion(monkeypatch: pytest.Monke
     group_id = "test-noemotion"
     pipeline.reset_group(group_id)
 
-    message = await pipeline.generate_reply(group_id, 10000)
-    assert message.extract_plain_text() == "你好喵"
+    messages = await pipeline.generate_reply(group_id, 10000)
+    assert messages[0].extract_plain_text() == "你好喵"
     records = pipeline.store.records(group_id)
     assert [r.role for r in records] == ["assistant", "system"]
     assert "情绪" in records[1].content
@@ -187,4 +187,51 @@ def test_focus_does_not_change_prefix() -> None:
     plain = pipeline.build_messages(group_id, 10000)
     focused = pipeline.build_messages(group_id, 10000, focus="FOCUS")
     assert plain[:-1] == focused[:-1]
+
+
+def test_split_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cfg, "SPLIT_PATTERN", "")
+    monkeypatch.setattr(cfg, "SPLIT_MAX_CHARS", 0)
+    assert pipeline.split_reply("第一句。第二句！第三句？") == ["第一句。第二句！第三句？"]
+
+
+def test_split_by_pattern(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cfg, "SPLIT_PATTERN", r"[。！？]")
+    monkeypatch.setattr(cfg, "SPLIT_MAX_CHARS", 0)
+    assert pipeline.split_reply("第一句。第二句！第三句？") == ["第一句", "第二句", "第三句"]
+
+
+def test_split_by_chars_prefers_punctuation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cfg, "SPLIT_PATTERN", "")
+    monkeypatch.setattr(cfg, "SPLIT_MAX_CHARS", 6)
+    chunks = pipeline.split_reply("你好呀。今天天气不错。出去走走吧")
+    assert all(len(chunk) <= 6 for chunk in chunks)
+    assert "".join(chunks) == "你好呀。今天天气不错。出去走走吧"
+    assert chunks[0] == "你好呀。"
+
+
+def test_split_ignores_broken_regex(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cfg, "SPLIT_PATTERN", "([")
+    monkeypatch.setattr(cfg, "SPLIT_MAX_CHARS", 0)
+    assert pipeline.split_reply("完整一条") == ["完整一条"]
+
+
+def test_compose_messages_split_sends_multiple(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cfg, "SPLIT_PATTERN", r"[。]")
+    monkeypatch.setattr(cfg, "SPLIT_MAX_CHARS", 0)
+    monkeypatch.setattr(pipeline, "pick_emotion_image", lambda emotion: None)
+    monkeypatch.setattr(pipeline.random, "random", lambda: 0.99)
+
+    messages = pipeline.compose_messages("第一句。第二句。", ["happy"], reply_id=7)
+    # 正则切分会吃掉匹配到的字符；想保留就用捕获组或零宽前瞻
+    assert [m.extract_plain_text() for m in messages] == ["第一句", "第二句"]
+    assert all([segment.type for segment in m] == ["text"] for m in messages)
+
+
+def test_split_keeps_punctuation_with_capture_group(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cfg, "SPLIT_PATTERN", r"([。！？])")
+    monkeypatch.setattr(cfg, "SPLIT_MAX_CHARS", 0)
+    chunks = pipeline.split_reply("第一句。第二句！")
+    assert "".join(chunks) == "第一句。第二句！"
+
 

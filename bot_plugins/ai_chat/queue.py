@@ -125,7 +125,7 @@ async def _drain(queue: GroupQueue, bot: Bot) -> None:
 async def _reply(bot: Bot, group_id: str, item: Pending) -> None:
     focus = pipeline.focus_hint(item.nickname, item.user_id, item.text, item.count)
     try:
-        message = await pipeline.generate_reply(
+        messages = await pipeline.generate_reply(
             group_id,
             item.self_id,
             reply_id=item.message_id,
@@ -133,8 +133,11 @@ async def _reply(bot: Bot, group_id: str, item: Pending) -> None:
         )
     except LLMError as exc:
         logger.warning(f"[{group_id}] 生成回复失败：{exc}")
-        message = MessageSegment.reply(item.message_id) + MessageSegment.text(pipeline.fail_tip())
-    await bot.send_group_msg(group_id=int(group_id), message=message)
+        messages = [MessageSegment.reply(item.message_id) + MessageSegment.text(pipeline.fail_tip())]
+    for index, message in enumerate(messages):
+        if index:
+            await asyncio.sleep(max(0.0, float(cfg.SPLIT_DELAY)))
+        await bot.send_group_msg(group_id=int(group_id), message=message)
 
 
 async def wait_idle(group_id: str, timeout: float = 30.0) -> None:

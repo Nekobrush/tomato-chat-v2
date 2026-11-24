@@ -58,7 +58,7 @@ def _fast_queue(monkeypatch: pytest.MonkeyPatch):
 def _fake_generate(monkeypatch: pytest.MonkeyPatch, calls: list[str | None]) -> None:
     async def fake(group_id, bot_id, reply_id=None, *, focus=None):
         calls.append(focus)
-        return Message("好的喵")
+        return [Message("好的喵")]
 
     monkeypatch.setattr(pipeline, "generate_reply", fake)
     monkeypatch.setattr(pipeline, "pick_emotion_image", lambda emotion: None)

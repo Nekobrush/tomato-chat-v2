@@ -52,6 +52,32 @@ def test_save_writes_overlay_and_applies_values(sandbox):
     assert merged["MAX_MEMORY"] == 8
 
 
+def test_split_settings_roundtrip(sandbox):
+    merged, _ = config_store.save(
+        {"SPLIT_PATTERN": r"[。！？]", "SPLIT_MAX_CHARS": 30, "SPLIT_DELAY": 1.2}
+    )
+
+    assert cfg.SPLIT_PATTERN == r"[。！？]"
+    assert cfg.SPLIT_MAX_CHARS == 30
+    assert cfg.SPLIT_DELAY == 1.2
+    assert merged["SPLIT_MAX_CHARS"] == 30
+
+
+def test_split_pattern_can_be_empty_and_must_be_valid_regex(sandbox):
+    config_store.save({"SPLIT_PATTERN": r"[。！？]"})
+    merged, _ = config_store.save({"SPLIT_PATTERN": ""})
+    assert merged["SPLIT_PATTERN"] == ""
+    assert cfg.SPLIT_PATTERN == ""
+
+    with pytest.raises(config_store.ConfigError):
+        config_store.save({"SPLIT_PATTERN": "(["})
+
+
+def test_split_max_chars_rejects_negative(sandbox):
+    with pytest.raises(config_store.ConfigError):
+        config_store.save({"SPLIT_MAX_CHARS": -1})
+
+
 def test_ai_name_is_not_a_bot_config_field(sandbox):
     # AI 名字属于人格设定，存在 webui_prompts.json，不再走机器人配置
     assert "AI_NAME" not in [field["key"] for field in config_store.FIELDS]

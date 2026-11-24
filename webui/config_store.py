@@ -42,6 +42,12 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "MAX_MEMORY", "label": "每群记忆条数", "kind": "int", "min": 2, "max": 100},
     {"key": "MERGE_MAX_LEN", "label": "合并消息长度", "kind": "int", "min": 16, "max": 4096},
     {"key": "RESP_LEN_LIMIT", "label": "回复过长阈值", "kind": "int", "min": 16, "max": 1000},
+    {"key": "SPLIT_PATTERN", "label": "分条正则", "kind": "pattern",
+     "help": "按这个正则把一条回复切成多条气泡，留空则不按正则切（例如 [。！？]；想保留标点用 ([。！？])）"},
+    {"key": "SPLIT_MAX_CHARS", "label": "分条字符数", "kind": "int", "min": 0, "max": 500,
+     "help": "每条气泡的字符上限，0 表示不按字数截断；留空即不截断"},
+    {"key": "SPLIT_DELAY", "label": "分条间隔（秒）", "kind": "float", "min": 0, "max": 10, "step": 0.1,
+     "help": "多条气泡之间停顿多久再发下一条"},
 ]
 
 FIELD_BY_KEY: dict[str, dict[str, Any]] = {field["key"]: field for field in FIELDS}
@@ -175,6 +181,17 @@ def _coerce(field: dict[str, Any], value: Any) -> Any:
         return source
     if kind == "models":
         return _validate_models(value)
+    if kind == "pattern":
+        pattern = str(value).strip()
+        if not pattern:
+            return ""
+        if len(pattern) > 200:
+            raise ConfigError(f"{field['label']} 不能超过 200 个字符")
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise ConfigError(f"{field['label']} 不是合法的正则：{exc}") from exc
+        return pattern
     if kind == "prob":
         field = {**field, "min": 0, "max": 1}
         return _as_number(field, value)

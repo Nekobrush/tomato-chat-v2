@@ -399,7 +399,7 @@ async def webui_chat(body: ChatIn) -> dict[str, Any]:
     async with pipeline.group_lock(group_id):
         pipeline.remember_user(group_id, "网页访客", "webui", body.text)
         try:
-            message = await pipeline.generate_reply(group_id, 10000)
+            messages = await pipeline.generate_reply(group_id, 10000)
         except LLMError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -410,8 +410,8 @@ async def webui_chat(body: ChatIn) -> dict[str, Any]:
         emotions, _ = extract_emotions(assistant.content)
 
     return {
-        "reply": message.extract_plain_text(),
-        "has_image": any(segment.type == "image" for segment in message),
+        "reply": "".join(message.extract_plain_text() for message in messages),
+        "has_image": any(segment.type == "image" for message in messages for segment in message),
         "emotions": emotions,
         "records": len(records),
     }
