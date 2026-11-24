@@ -21,3 +21,24 @@ def _isolate_runtime_config(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(cfg, "SPLIT_DELAY_PER_CHAR", 0.02)
     monkeypatch.setattr(cfg, "SPLIT_DELAY_JITTER", 0.3)
     yield
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _isolate_prompts():
+    """测试也不依赖本机的 webui_prompts.json（用户可能改了人设、前后缀）。
+
+    做法是让 prompts 去读一个不存在的文件，从而回落到代码默认值；
+    不会删除或改写用户实际保存的提示词文件。
+    """
+    import bot_config as cfg
+    from bot_plugins.ai_chat import prompts
+
+    saved_file = prompts.PROMPTS_FILE
+    saved_name = cfg.AI_NAME
+    prompts.PROMPTS_FILE = saved_file.with_name("__no_prompts_for_tests__.json")
+    prompts.reload()
+    yield
+    prompts.PROMPTS_FILE = saved_file
+    cfg.AI_NAME = saved_name
+    prompts.reload()
+

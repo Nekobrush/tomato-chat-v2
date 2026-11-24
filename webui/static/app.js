@@ -1424,6 +1424,10 @@
         const out = target.parentElement.querySelector("[data-prob-out]");
         if (out) out.textContent = pct(target.value);
       }
+      if (target.matches('[data-action="water-slider"]')) {
+        const out = target.parentElement.querySelector("[data-water-out]");
+        if (out) out.textContent = pct(target.value);
+      }
       if (target.matches("[data-key]") || target.closest("#models-editor") || target.closest("#groups-editor")) {
         markDirty();
       }
@@ -1432,6 +1436,11 @@
 
     $("#view").addEventListener("change", (event) => {
       const target = event.target;
+      if (target.matches('[data-action="water-slider"]')) {
+        // 松手才提交，拖动过程中只更新显示
+        patchGroup(state.groupId, { water_probability: Number(target.value) });
+        return;
+      }
       if (target.matches("[data-key]") || target.closest("#models-editor")) markDirty();
     });
 
