@@ -167,6 +167,22 @@ def wait_until_ready(port: int, process: subprocess.Popen) -> bool:
     return False
 
 
+def open_browser(url: str) -> None:
+    """用 explorer 打开网页。
+
+    直接从当前进程调 webbrowser.open 时，如果本进程是管理员权限，拉起来的浏览器
+    也会是提权实例，之后普通权限的浏览器就打不开（Edge 会弹「现有实例正在以提升的
+    权限运行」）。交给 explorer.exe 走普通权限的 shell 就没这个问题。
+    """
+    if os.name == "nt":
+        try:
+            subprocess.Popen(["explorer.exe", url])
+            return
+        except OSError:
+            pass
+    webbrowser.open(url)
+
+
 def run_server(python: Path, port: int, no_browser: bool = False) -> int:
     say("[3/4] 启动机器人和 WebUI…\n")
     env = os.environ.copy()
@@ -187,7 +203,7 @@ def run_server(python: Path, port: int, no_browser: bool = False) -> int:
             say(f"\n进程已退出（退出码 {process.returncode}）。")
 
     if not no_browser:
-        webbrowser.open(f"http://127.0.0.1:{port}/webui/")
+        open_browser(f"http://127.0.0.1:{port}/webui/")
     say(f"服务已就绪。WebUI: http://127.0.0.1:{port}/webui/")
     say("关闭这个窗口、或按 Ctrl+C，机器人就会停止。\n")
 
@@ -248,7 +264,7 @@ def main() -> None:
                 say(f"[提示] 服务已经在运行：http://127.0.0.1:{port}/webui/")
                 say("要重启的话，请先关掉原来那个控制台窗口（或结束占用的进程）。")
                 if not no_browser:
-                    webbrowser.open(f"http://127.0.0.1:{port}/webui/")
+                    open_browser(f"http://127.0.0.1:{port}/webui/")
                 wait_for_enter("已经有一个实例在运行")
                 sys.exit(2)
     except (urllib.error.URLError, OSError, ValueError):
