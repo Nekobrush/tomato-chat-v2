@@ -259,6 +259,49 @@ async def save_config(body: ConfigIn) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# 人格与提示词
+# ---------------------------------------------------------------------------
+
+
+def _prompts():
+    """延迟导入，避免 WebUI 在没有 nonebot 初始化时 import 整个插件包。"""
+    from bot_plugins.ai_chat import prompts
+
+    return prompts
+
+
+class PromptsIn(BaseModel):
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.get("/prompts")
+async def get_prompts() -> dict[str, Any]:
+    prompts = _prompts()
+    return {
+        "values": prompts.current(),
+        "defaults": prompts.defaults(),
+        "fields": prompts.FIELDS,
+        "file": prompts.PROMPTS_FILE.name,
+    }
+
+
+@router.post("/prompts")
+async def save_prompts(body: PromptsIn) -> dict[str, Any]:
+    prompts = _prompts()
+    try:
+        values = prompts.save(body.values)
+    except prompts.PromptError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"values": values, "defaults": prompts.defaults(), "fields": prompts.FIELDS}
+
+
+@router.post("/prompts/reset")
+async def reset_prompts() -> dict[str, Any]:
+    prompts = _prompts()
+    return {"values": prompts.reset(), "defaults": prompts.defaults(), "fields": prompts.FIELDS}
+
+
+# ---------------------------------------------------------------------------
 # 群聊
 # ---------------------------------------------------------------------------
 

@@ -126,12 +126,12 @@ def test_save_config_rejects_bad_value(client):
     assert "温度" in response.json()["detail"]
 
 
-def test_restart_required_is_reported(client):
+def test_restart_required_is_empty_for_hot_fields(client):
     response = client.post("/api/config", json={"values": {"AI_NAME": "mikan"}})
 
     assert response.status_code == 200
-    assert "AI_NAME" in response.json()["restart_required"]
-    assert "AI_NAME" in client.get("/api/status").json()["restart_required"]
+    assert response.json()["restart_required"] == []
+    assert client.get("/api/status").json()["restart_required"] == []
 
 
 def test_group_crud(client):
@@ -255,3 +255,31 @@ def test_emotion_preview_serves_image(client):
     assert response.status_code in {200, 404}
     if response.status_code == 200:
         assert response.headers["content-type"].startswith("image/")
+
+
+def test_prompts_roundtrip_and_validation(client, sandbox, monkeypatch):
+    from bot_plugins.ai_chat import prompts
+
+    monkeypatch.setattr(prompts, "PROMPTS_FILE", sandbox / "webui_prompts.json")
+
+    data = client.get("/api/prompts").json()
+    assert data["fields"] and "system" in data["values"]
+    assert data["file"] == "webui_prompts.json"
+
+    values = dict(data["values"])
+    values["system"] = values["system"] + "\n额外设定喵。"
+    saved = client.post("/api/prompts", json={"values": values})
+
+    assert saved.status_code == 200
+    assert "额外设定喵" in saved.json()["values"]["system"]
+    assert "额外设定喵" in prompts.SYSTEM_PROMPT
+    assert (sandbox / "webui_prompts.json").exists()
+
+    bad = dict(values)
+    bad["system"] = ""
+    assert client.post("/api/prompts", json={"values": bad}).status_code == 400
+
+    reset = client.post("/api/prompts/reset")
+    assert reset.status_code == 200
+    assert not (sandbox / "webui_prompts.json").exists()
+    assert "额外设定喵" not in prompts.SYSTEM_PROMPT

@@ -1,4 +1,4 @@
-**/__pycache__
+﻿**/__pycache__
 resources/emotions/*/*
 
 # Python 虚拟环境
@@ -24,3 +24,4 @@ launcher.err.log
 *.log
 crop.png
 GPT-Speak-main/
+webui_prompts.json

@@ -52,11 +52,11 @@ def test_save_writes_overlay_and_applies_values(sandbox):
     assert merged["MAX_MEMORY"] == 8
 
 
-def test_ai_name_change_requires_restart(sandbox):
+def test_ai_name_change_applies_without_restart(sandbox):
     _, restart = config_store.save({"AI_NAME": "mikan"})
 
     assert cfg.AI_NAME == "mikan"
-    assert restart == ["AI_NAME"]
+    assert restart == []
 
 
 @pytest.mark.parametrize(

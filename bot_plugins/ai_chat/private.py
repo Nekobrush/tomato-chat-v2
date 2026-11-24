@@ -18,13 +18,10 @@ from nonebot.log import logger
 
 import bot_config as cfg
 
-from . import pipeline
+from . import pipeline, prompts
 from .errors import LLMError
 from .runtime import nickname
 from .text import segments_to_text
-
-# 私聊和群聊的上下文不同：提醒模型现在是单独对话，可以放松一点
-_PRIVATE_NOTE = "（现在是私聊：对方只和你一个人说话，不必担心打断群聊）"
 
 
 def _allowed(event: PrivateMessageEvent) -> bool:
@@ -63,7 +60,7 @@ async def handle_private_message(bot: Bot, event: PrivateMessageEvent) -> None:
                 key,
                 event.self_id,
                 reply_id=None,
-                note=_PRIVATE_NOTE,
+                note=prompts.PRIVATE_NOTE,
             )
         except LLMError as exc:
             logger.warning(f"[私聊 {event.user_id}] 生成回复失败：{exc}")

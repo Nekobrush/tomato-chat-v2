@@ -15,7 +15,7 @@ import bot_config as cfg
 
 from .model import llm
 from .memory import DEFAULT_MARK, PERSISTENCE_MARK, TIP_MARK, MemoryStore
-from .prompts import REQFAIL_TIPS, SYSTEM_MESSAGES, TIPS_NO_EMOTION, TIPS_NO_MEOW, TIPS_TOO_LONG
+from . import prompts
 from .text import collapse_whitespace, extract_emotions, remove_emojis
 
 store = MemoryStore(cfg.MAX_MEMORY)
@@ -91,7 +91,7 @@ def reset_group(group_id: str) -> int:
 
 
 def fail_tip() -> str:
-    return random.choice(REQFAIL_TIPS)
+    return random.choice(prompts.REQFAIL_TIPS)
 
 
 def focus_hint(nickname: str, user_id: int | str, text: str, count: int = 1) -> str:
@@ -99,17 +99,12 @@ def focus_hint(nickname: str, user_id: int | str, text: str, count: int = 1) -> 
 
     群记忆是所有人共享的，模型每轮都能看到别人的话题；这句话负责告诉它
     「现在轮到这个人的这条消息」，并且别重复回应前文或自己上一条说过的话。
+    文案可在 WebUI 的「人格与提示词」里改，占位符：{who} {target} {quoted}。
     """
     quoted = text if len(text) <= 80 else text[:80] + "…"
     who = f"{nickname}({user_id})"
-    if count > 1:
-        head = f"现在轮到回应 {who} 刚发的这 {count} 条消息："
-    else:
-        head = f"现在轮到回应 {who} 的这条消息："
-    return (
-        f"{head}\n{quoted}\n"
-        "其他人的话题前面已经回应过了，不要重复回应；也不要重复你上一条说过的话。"
-    )
+    target = f"刚发的这 {count} 条消息" if count > 1 else "的这条消息"
+    return prompts.render(prompts.FOCUS_HINT_TEMPLATE, who=who, target=target, quoted=quoted)
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +114,12 @@ def focus_hint(nickname: str, user_id: int | str, text: str, count: int = 1) -> 
 def system_context(bot_id: int | str) -> dict[str, str]:
     now = time.time()
     readable = datetime.fromtimestamp(now).strftime("%Y-%m-%d %H:%M:%S")
-    content = f"当前毫秒级时间戳:{int(now * 1000)}\n当前时间:{readable}\n你的QQ号:{bot_id}"
+    content = prompts.render(
+        prompts.CONTEXT_NOTE_TEMPLATE,
+        timestamp=int(now * 1000),
+        time=readable,
+        self_id=bot_id,
+    )
     return {"role": "system", "content": content}
 
 
@@ -164,11 +164,11 @@ def build_messages(
         volatile_system.append(tips[-1])
     dialog = [record for record in records if record.role != "system"]
 
-    system_parts = [SYSTEM_MESSAGES[0]["content"], *persistent_system]
+    system_parts = [prompts.SYSTEM_MESSAGES[0]["content"], *persistent_system]
     messages: list[dict[str, str]] = [
         {"role": "system", "content": "\n\n".join(part for part in system_parts if part)}
     ]
-    messages.extend(SYSTEM_MESSAGES[1:])
+    messages.extend(prompts.SYSTEM_MESSAGES[1:])
 
     verbatim_from = max(len(dialog) - KEEP_PREFIX_RECORDS, 0)
     for offset, record in enumerate(dialog):
@@ -263,11 +263,11 @@ def _fit_length(text: str) -> str:
 def collect_tips(text: str, emotions: list[str]) -> str:
     tips: list[str] = []
     if not emotions:
-        tips.append(TIPS_NO_EMOTION)
+        tips.append(prompts.TIPS_NO_EMOTION)
     if len(text) > cfg.RESP_LEN_LIMIT:
-        tips.append(TIPS_TOO_LONG)
+        tips.append(prompts.TIPS_TOO_LONG)
     if _needs_meow(text):
-        tips.append(TIPS_NO_MEOW)
+        tips.append(prompts.TIPS_NO_MEOW)
     return "\n".join(tips)
 
 
@@ -276,7 +276,7 @@ def compose_message(text: str, emotions: list[str], reply_id: int | None) -> Mes
     if reply_id is not None and random.random() < cfg.REPLY_PROBABILITY:
         message.append(MessageSegment.reply(reply_id))
 
-    body = text or "喵？"
+    body = text or prompts.EMPTY_REPLY
     emotion = random.choice(emotions) if emotions else None
     image = pick_emotion_image(emotion)
 
@@ -321,11 +321,11 @@ async def generate_reply(
 
     tips: list[str] = []
     if not emotions:
-        tips.append(TIPS_NO_EMOTION)
+        tips.append(prompts.TIPS_NO_EMOTION)
     if too_long:
-        tips.append(TIPS_TOO_LONG)
+        tips.append(prompts.TIPS_TOO_LONG)
     if missing_meow:
-        tips.append(TIPS_NO_MEOW)
+        tips.append(prompts.TIPS_NO_MEOW)
     if tips:
         store.append(group_id, "system", "\n".join(tips), mark=TIP_MARK)
 

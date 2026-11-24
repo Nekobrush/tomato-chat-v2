@@ -7,13 +7,15 @@
 
   const state = {
     status: null,
-    view: "overview", // overview | group | settings | logs
+    view: "overview", // overview | group | settings | prompts | logs
     groupId: null,
     tab: "overview",
     search: "",
     fields: [],
     config: null,
     dirty: false,
+    prompts: null,
+    promptDirty: false,
     memory: [],
     memoryGroup: null,
     chat: [],
@@ -195,12 +197,14 @@
     renderHeader();
     renderTabs();
     const skipSettings = state.view === "settings" && state.dirty;
+    const skipPrompts = state.view === "prompts" && state.promptDirty;
     const skipChat = state.view === "group" && state.tab === "chat";
-    if (!skipSettings && !skipChat) renderView();
+    if (!skipSettings && !skipPrompts && !skipChat) renderView();
     if (skipSettings) {
       // 设置页只更新侧栏与标题，避免打断正在编辑的表单
       syncSaveBar();
     }
+    if (skipPrompts) syncPromptBar();
     if (state.view === "group" && state.tab === "chat") updateChatHeaderOnly();
   }
 
@@ -290,6 +294,13 @@
           : `<span class="status-pill ok">已生效</span>`,
       ];
       actions = [`<button type="button" data-action="refresh">刷新</button>`];
+    } else if (state.view === "prompts") {
+      title = "人格与提示词";
+      meta = [
+        `<span class="status-pill ok">改完立即生效</span>`,
+        `<span class="mono">webui_prompts.json</span>`,
+      ];
+      actions = [`<button type="button" data-action="reload-prompts">重新读取</button>`];
     } else if (state.view === "logs") {
       title = "运行日志";
       meta = [
@@ -339,6 +350,7 @@
         renderChatMessages();
       }
     } else if (state.view === "settings") view.innerHTML = viewSettings();
+    else if (state.view === "prompts") view.innerHTML = viewPrompts();
     else if (state.view === "logs") {
       view.innerHTML = viewLogs();
       loadLogs();
@@ -926,6 +938,149 @@
     return values;
   }
 
+  /* ------------------------------------------------ 视图：人格与提示词 */
+
+  const PROMPT_GROUPS = [
+    {
+      title: "人格设定",
+      keys: ["system", "example_user", "example_assistant"],
+      desc: "模型是谁、怎么说话。人设写进每轮请求的最前面，改完下一句回复就会变。",
+    },
+    {
+      title: "纠正提示",
+      keys: ["tip_no_emotion", "tip_too_long", "tip_no_meow"],
+      desc: "回复不合要求时，下一次生成会看到其中一条提醒（只保留最新一条）。",
+    },
+    {
+      title: "场景与兜底",
+      keys: ["reqfail_tips", "private_note", "focus_hint", "context_note", "empty_reply"],
+      desc: "私聊说明、多人轮流 @ 时的聚焦指令、每轮附带的当前时间，以及各种失败兜底。",
+    },
+  ];
+
+  function promptField(key) {
+    return (state.prompts?.fields || []).find((field) => field.key === key) || { key, label: key, kind: "text", rows: 3 };
+  }
+
+  function promptControl(field, value) {
+    const key = esc(field.key);
+    const rows = field.rows || 3;
+    const text = Array.isArray(value) ? value.join("\n") : String(value ?? "");
+    return `<textarea data-prompt="${key}" rows="${rows}" spellcheck="false">${esc(text)}</textarea>`;
+  }
+
+  function viewPrompts() {
+    if (!state.prompts) return `<div class="empty" style="padding:40px 0">正在读取提示词…</div>`;
+    const values = state.prompts.values || {};
+    const index = PROMPT_GROUPS.map(
+      (group, offset) => `<button type="button" data-prompt-scroll="${offset}" class="${offset === 0 ? "active" : ""}">${esc(group.title)}</button>`,
+    ).join("");
+    const body = PROMPT_GROUPS.map(
+      (group, offset) => `
+      <section class="setting-group" id="prompt-group-${offset}">
+        <h3>${esc(group.title)}</h3>
+        ${group.desc ? `<p>${esc(group.desc)}</p>` : ""}
+        ${group.keys
+          .map((key) => {
+            const field = promptField(key);
+            return `
+          <div class="setting prompt-setting">
+            <div>
+              <div class="setting-title">${esc(field.label)}</div>
+              ${field.help ? `<div class="setting-help">${esc(field.help)}</div>` : ""}
+              <div class="key">${esc(key)}</div>
+            </div>
+            <div class="setting-control">${promptControl(field, values[key])}</div>
+          </div>`;
+          })
+          .join("")}
+      </section>`,
+    ).join("");
+
+    return `
+      <div class="settings-layout">
+        <nav class="settings-index" aria-label="提示词分类">${index}</nav>
+        <div class="settings-body">${body}</div>
+      </div>
+      <div class="save-bar">
+        <span id="prompt-state" class="state">改动立即生效，写进 webui_prompts.json</span>
+        <span class="spacer"></span>
+        <button type="button" data-action="reset-prompts" class="ghost">恢复默认</button>
+        <button type="button" data-action="save-prompts" class="primary">保存并应用</button>
+      </div>`;
+  }
+
+  async function loadPrompts() {
+    try {
+      state.prompts = await api("/prompts");
+    } catch (err) {
+      toast(`读取提示词失败：${err.message}`, "error");
+    }
+  }
+
+  function collectPrompts() {
+    const values = { ...(state.prompts?.values || {}) };
+    for (const field of state.prompts?.fields || []) {
+      const el = $(`[data-prompt="${field.key}"]`);
+      if (!el) continue;
+      values[field.key] =
+        field.kind === "lines"
+          ? el.value
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean)
+          : el.value;
+    }
+    return values;
+  }
+
+  function syncPromptBar() {
+    const label = $("#prompt-state");
+    if (!label) return;
+    if (state.promptDirty) {
+      label.textContent = "有未保存的修改";
+      label.className = "state dirty";
+    } else {
+      label.textContent = "改动立即生效，写进 webui_prompts.json";
+      label.className = "state";
+    }
+  }
+
+  function markPromptDirty() {
+    if (state.view !== "prompts" || state.promptDirty) return;
+    state.promptDirty = true;
+    syncPromptBar();
+  }
+
+  async function savePrompts() {
+    const button = $('[data-action="save-prompts"]');
+    if (button) button.disabled = true;
+    try {
+      const data = await api("/prompts", { method: "POST", body: JSON.stringify({ values: collectPrompts() }) });
+      state.prompts = { ...state.prompts, ...data };
+      state.promptDirty = false;
+      syncPromptBar();
+      toast("提示词已保存，立即生效", "ok");
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function resetPrompts() {
+    if (!(await confirmAction("恢复默认会删掉 webui_prompts.json，页面上的修改都会丢失。继续吗？", { okText: "恢复默认" }))) return;
+    try {
+      const data = await api("/prompts/reset", { method: "POST" });
+      state.prompts = { ...state.prompts, ...data };
+      state.promptDirty = false;
+      render();
+      toast("已恢复默认提示词", "ok");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
   /* -------------------------------------------------------- 视图：日志 */
 
   function logLine(line) {
@@ -970,6 +1125,12 @@
     if (view === "settings") {
       state.config = state.status?.config?.values || state.config;
       state.dirty = false;
+    }
+    if (view === "prompts") {
+      state.promptDirty = false;
+      if (!state.prompts) loadPrompts().then(() => {
+        if (state.view === "prompts") render();
+      });
     }
     render();
   }
@@ -1153,6 +1314,13 @@
         $$(".settings-index button").forEach((button) => button.classList.toggle("active", button === scrollButton));
         return;
       }
+      const promptScroll = event.target.closest("[data-prompt-scroll]");
+      if (promptScroll) {
+        const section = $(`#prompt-group-${promptScroll.dataset.promptScroll}`);
+        if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+        $$(".settings-index button").forEach((button) => button.classList.toggle("active", button === promptScroll));
+        return;
+      }
       const action = event.target.closest("[data-action]");
       if (!action) return;
       handleAction(action, event);
@@ -1167,6 +1335,7 @@
       if (target.matches("[data-key]") || target.closest("#models-editor") || target.closest("#groups-editor")) {
         markDirty();
       }
+      if (target.matches("[data-prompt]")) markPromptDirty();
     });
 
     $("#view").addEventListener("change", (event) => {
@@ -1280,6 +1449,18 @@
       }
       case "save-config":
         saveConfig();
+        break;
+      case "save-prompts":
+        savePrompts();
+        break;
+      case "reset-prompts":
+        resetPrompts();
+        break;
+      case "reload-prompts":
+        loadPrompts().then(() => {
+          render();
+          toast("已重新读取提示词", "ok");
+        });
         break;
       case "discard-config":
         state.dirty = false;
