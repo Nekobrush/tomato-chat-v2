@@ -14,6 +14,7 @@ from ..errors import LLMError
 from .base import ChatProvider, GenerationParams
 
 _V1_PATTERN = re.compile(r"/v1(?:/|$)")
+_NON_CHAT_PATTERN = re.compile(r"embed|rerank|bge-|text-similarity")
 
 
 def normalize_base_url(url: str) -> str:
@@ -93,6 +94,8 @@ class OpenAICompatibleProvider(ChatProvider):
             for item in data.get("data") or []
             if isinstance(item, dict) and item.get("id")
         ]
+        # 向量 / 重排模型不能用于对话，同步时过滤掉
+        models = [name for name in models if not _NON_CHAT_PATTERN.search(name.lower())]
         if not models:
             raise LLMError(f"{self.base_url} 没有返回任何模型喵")
         return models

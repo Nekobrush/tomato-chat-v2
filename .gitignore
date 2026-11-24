@@ -17,3 +17,10 @@ logs/
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
+
+# 启动器临时输出、本地截图与参考项目
+launcher.out.log
+launcher.err.log
+*.log
+crop.png
+GPT-Speak-main/

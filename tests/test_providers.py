@@ -221,6 +221,26 @@ async def test_openai_list_models_empty() -> None:
         await provider.list_models()
 
 
+async def test_openai_list_models_skips_embedding() -> None:
+    provider = _openai()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"id": "qwen3.5-9b@q6_k"},
+                    {"id": "text-embedding-nomic-embed-text-v1.5"},
+                    {"id": "bge-rerank"},
+                    {"id": "deepseek-r1"},
+                ]
+            },
+        )
+
+    await _install(provider, handler)
+    assert await provider.list_models() == ["qwen3.5-9b@q6_k", "deepseek-r1"]
+
+
 # ---------------------------------------------------------------------------
 # ollama
 # ---------------------------------------------------------------------------

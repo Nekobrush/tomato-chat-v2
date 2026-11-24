@@ -1,263 +1,112 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tomato · 控制台</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍅</text></svg>">
-<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='36' r='22' fill='%23d9503f'/%3E%3Cpath d='M32 16c-4-7-12-8-14-3 4 1 6 3 7 6-5-1-9 1-9 4 5 0 10 1 16 0 6 1 11 0 16 0 0-3-4-5-9-4 1-3 3-5 7-6-2-5-10-4-14 3z' fill='%233f8f52'/%3E%3C/svg%3E">
+<script src="/webui/theme.js"></script>
+<link rel="stylesheet" href="/webui/style.css">
+<script defer src="/webui/app.js"></script>
 </head>
 <body>
-
-<header class="topbar">
-  <div class="brand">
-    <span class="logo">🍅</span>
-    <div>
-      <h1>tomato 控制台</h1>
-      <p>QQ 群猫娘 · 网页管理台</p>
-    </div>
-  </div>
-  <div class="top-right">
-    <span id="pill-status" class="pill offline">连接中…</span>
-    <span id="pill-model" class="pill ghost">模型 —</span>
-    <span id="pill-uptime" class="pill ghost">—</span>
-    <button id="btn-refresh" class="icon-btn" title="刷新">⟳</button>
-  </div>
-</header>
-
-<nav class="tabs" id="tabs">
-  <button class="tab active" data-tab="overview">概览</button>
-  <button class="tab" data-tab="groups">群聊</button>
-  <button class="tab" data-tab="settings">设置</button>
-  <button class="tab" data-tab="memory">记忆</button>
-  <button class="tab" data-tab="chat">试聊</button>
-  <button class="tab" data-tab="logs">日志</button>
-</nav>
-
-<main>
-
-  <!-- 概览 -->
-  <section id="panel-overview" class="panel active">
-    <div class="stat-grid">
-      <div class="card stat">
-        <span class="stat-icon">🟢</span>
-        <div>
-          <div class="stat-label">运行状态</div>
-          <div class="stat-value" id="stat-online">—</div>
-          <div class="stat-sub" id="stat-selfids">—</div>
-        </div>
-      </div>
-      <div class="card stat">
-        <span class="stat-icon">🧠</span>
-        <div>
-          <div class="stat-label">当前模型</div>
-          <div class="stat-value" id="stat-model">—</div>
-          <div class="stat-sub" id="stat-source">—</div>
-        </div>
-      </div>
-      <div class="card stat">
-        <span class="stat-icon">💬</span>
-        <div>
-          <div class="stat-label">群聊</div>
-          <div class="stat-value" id="stat-groups">—</div>
-          <div class="stat-sub" id="stat-water">—</div>
-        </div>
-      </div>
-      <div class="card stat">
-        <span class="stat-icon">📚</span>
-        <div>
-          <div class="stat-label">记忆</div>
-          <div class="stat-value" id="stat-memory">—</div>
-          <div class="stat-sub" id="stat-memory-sub">—</div>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">🍅</span>
+      <div class="brand-text">
+        <strong>tomato</strong>
+        <div class="connection">
+          <span id="conn-dot" class="dot"></span>
+          <span id="conn-text">正在连接…</span>
         </div>
       </div>
     </div>
 
-    <div class="grid-2">
-      <div class="card">
-        <div class="card-head">
-          <h2>当前模型</h2>
-          <div class="btn-row">
-            <button id="btn-sync" class="btn small">同步模型列表</button>
-          </div>
-        </div>
-        <div id="model-detail" class="muted">加载中…</div>
-      </div>
+    <div class="side-heading"><span>群聊</span><span id="group-count" class="count">0</span></div>
+    <input id="group-search" class="side-search" type="search" placeholder="搜索群号" aria-label="搜索群号" autocomplete="off">
+    <div id="groups" class="group-list" role="list" aria-label="授权群聊"></div>
 
-      <div class="card">
-        <div class="card-head"><h2>模型源</h2><span class="muted" id="source-count"></span></div>
-        <div id="source-list"></div>
-      </div>
+    <form id="add-group" class="add-group" autocomplete="off">
+      <input id="add-group-id" inputmode="numeric" maxlength="12" placeholder="输入群号添加" aria-label="要加入白名单的群号">
+      <button type="submit">添加</button>
+    </form>
+
+    <nav class="side-nav" aria-label="全局页面">
+      <button type="button" data-view="overview"><span class="nav-icon overview" aria-hidden="true"></span>所有群总览</button>
+      <button type="button" data-view="settings"><span class="nav-icon sliders" aria-hidden="true"></span>模型与设置</button>
+      <button type="button" data-view="logs"><span class="nav-icon console" aria-hidden="true"></span>运行日志</button>
+      <button type="button" data-action="about"><span class="nav-icon about" aria-hidden="true">i</span>关于</button>
+    </nav>
+
+    <div class="side-foot">
+      <button id="theme-toggle" class="link-button" type="button" aria-pressed="false">深色模式</button>
+      <span id="footer-model" title="当前模型"></span>
     </div>
+  </aside>
 
-    <div class="card" id="emotion-card">
-      <div class="card-head">
-        <h2>表情包</h2>
-        <span class="muted" id="emotion-total"></span>
+  <main class="main">
+    <header class="group-header">
+      <div class="group-heading">
+        <h1 id="title">正在读取…</h1>
+        <div class="group-meta" id="meta"></div>
       </div>
-      <div id="emotion-grid" class="emotion-grid"></div>
-      <p class="hint">每张图都是随机抽的，点一下可以在新标签页查看原图。</p>
-    </div>
-  </section>
-
-  <!-- 群聊 -->
-  <section id="panel-groups" class="panel">
-    <div class="card">
-      <div class="card-head">
-        <h2>群聊控制</h2>
-        <form id="add-group-form" class="inline-form">
-          <input id="new-group" placeholder="群号，例如 893" maxlength="12" inputmode="numeric">
-          <button class="btn small">添加</button>
-        </form>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>群号</th>
-              <th>对话</th>
-              <th>自动水群</th>
-              <th>水群概率</th>
-              <th>记忆</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="group-rows"></tbody>
-        </table>
-      </div>
-      <p class="hint">
-        严格白名单：不在列表里的群不会收到任何回复。「对话」关掉后连 @ 也不会回；
-        「自动水群」开启后按概率接话，@ 始终必回。
-      </p>
-    </div>
-  </section>
-
-  <!-- 设置 -->
-  <section id="panel-settings" class="panel">
-    <div class="settings-grid">
-      <div class="card wide">
-        <div class="card-head">
-          <h2>模型源</h2>
-          <div class="btn-row">
-            <button id="btn-add-source" class="btn small ghost">＋ 添加模型源</button>
-          </div>
-        </div>
-        <div id="source-editor"></div>
-        <p class="hint">
-          ollama 用 <span class="mono">http://localhost:11434</span>；
-          LM Studio / DeepSeek / OneAPI 等 OpenAI 兼容服务用
-          <span class="mono">type=openai</span> 和对应地址（结尾的 /v1 可以省略）。
-        </p>
-      </div>
-
-      <div class="card">
-        <h2>默认模型</h2>
-        <label for="f-DEFAULT_SOURCE">模型源</label>
-        <select id="f-DEFAULT_SOURCE"></select>
-        <div style="height:10px"></div>
-        <label for="f-DEFAULT_MODEL_INDEX">模型序号（从 1 开始选，这里填下标）</label>
-        <input id="f-DEFAULT_MODEL_INDEX" type="number" min="0" max="999">
-        <p class="hint">保存后会立即切换，不需要重启。</p>
-      </div>
-
-      <div class="card">
-        <h2>生成参数</h2>
-        <div id="gen-fields" class="field-grid"></div>
-      </div>
-
-      <div class="card">
-        <h2>行为概率</h2>
-        <div id="prob-fields" class="field-grid"></div>
-        <p class="hint">水群概率按百分比填写，0.125 表示 12.5%。</p>
-      </div>
-
-      <div class="card wide">
-        <h2>身份与记忆</h2>
-        <div class="field-grid">
-          <div>
-            <label for="f-AI_NAME">AI 名字（改完需重启）</label>
-            <input id="f-AI_NAME" type="text" maxlength="32">
-          </div>
-          <div>
-            <label>记忆容量（每群条数）</label>
-            <div style="display:flex;gap:10px">
-              <input id="f-MAX_MEMORY" type="number" min="2" max="100">
-              <input id="f-MERGE_MAX_LEN" type="number" min="16" max="4096" title="合并消息长度">
-            </div>
-            <p class="hint" style="margin-top:4px">左：记忆条数；右：合并消息长度</p>
-          </div>
-          <div class="span2">
-            <label>允许的群号</label>
-            <div id="allow-groups" class="tag-input"></div>
-            <div class="chip-input">
-              <input id="group-chip" placeholder="输入群号后回车 / 点添加" inputmode="numeric">
-              <button id="btn-add-chip" class="btn small" type="button">添加</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 记忆 -->
-  <section id="panel-memory" class="panel">
-    <div class="card">
-      <div class="card-head">
-        <h2>群记忆</h2>
-        <div class="btn-row">
-          <select id="memory-group" style="width:auto;min-width:140px"></select>
-          <button id="btn-memory-refresh" class="btn small ghost">刷新</button>
-          <button id="btn-memory-clear" class="btn small danger">清空该群记忆</button>
-        </div>
-      </div>
-      <div id="memory-list" class="memory-list"></div>
-    </div>
-  </section>
-
-  <!-- 试聊 -->
-  <section id="panel-chat" class="panel">
-    <div class="card chat-card">
-      <div class="card-head">
-        <h2>试聊</h2>
-        <div class="btn-row">
-          <span id="chat-meta" class="muted"></span>
-          <button id="btn-chat-reset" class="btn small ghost">重置上下文</button>
-        </div>
-      </div>
-      <div id="chat-log" class="chat-log">
-        <div class="chat-empty">这是独立的测试会话，不会影响 QQ 群里的记忆。<br>发一句话试试猫娘的语气吧喵。</div>
-      </div>
-      <form id="chat-form" class="chat-form">
-        <input id="chat-input" placeholder="和猫娘说点什么…" autocomplete="off" maxlength="500">
-        <button class="btn primary" type="submit">发送</button>
-      </form>
-    </div>
-  </section>
-
-  <!-- 日志 -->
-  <section id="panel-logs" class="panel">
-    <div class="card">
-      <div class="card-head">
-        <h2>运行日志</h2>
-        <div class="btn-row">
-          <label class="switch-label"><input type="checkbox" id="log-auto" checked> 自动刷新</label>
-          <button id="btn-log-refresh" class="btn small ghost">刷新</button>
-        </div>
-      </div>
-      <pre id="log-view" class="log-view">加载中…</pre>
-      <p class="hint" id="log-path"></p>
-    </div>
-  </section>
-
-</main>
-
-<div id="save-bar" class="save-bar">
-  <span class="muted" id="save-status">修改后点右侧保存，立即生效（标注「需重启」的除外）。</span>
-  <button id="btn-save" class="btn primary">保存并应用</button>
+      <div class="group-actions" id="actions"></div>
+    </header>
+    <nav class="tabs" id="tabs" hidden aria-label="当前页面"></nav>
+    <section id="view" class="view" aria-live="polite"></section>
+  </main>
 </div>
 
-<div id="toast" class="toast"></div>
+<dialog id="token-dialog" class="dialog token-dialog">
+  <form method="dialog">
+    <div class="dialog-head"><h2>需要访问令牌</h2></div>
+    <div class="dialog-body">
+      <p class="hint">这台控制台只允许本机访问。远程访问请在启动时设置 <code>WEBUI_TOKEN</code>，然后在这里填入同一个令牌。</p>
+      <input id="token-input" type="password" placeholder="粘贴 WEBUI_TOKEN" aria-label="访问令牌" autocomplete="off">
+      <p id="token-error" class="form-error" hidden></p>
+    </div>
+    <div class="dialog-foot">
+      <span>令牌只保存在本机浏览器里</span>
+      <div class="dialog-foot-actions">
+        <button value="cancel" type="submit" class="ghost">取消</button>
+        <button id="token-save" value="ok" type="submit" class="primary">保存</button>
+      </div>
+    </div>
+  </form>
+</dialog>
 
-<script src="app.js"></script>
+<dialog id="confirm-dialog" class="dialog confirm-dialog">
+  <form method="dialog">
+    <div class="dialog-head"><h2 id="confirm-title">确认操作</h2></div>
+    <div class="dialog-body"><p id="confirm-text" class="confirm-text"></p></div>
+    <div class="dialog-foot">
+      <span></span>
+      <div class="dialog-foot-actions">
+        <button value="cancel" type="submit" class="ghost">取消</button>
+        <button id="confirm-ok" value="ok" type="submit" class="danger">确认</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="about-dialog" class="dialog about-dialog">
+  <form method="dialog">
+    <div class="dialog-head"><h2>关于</h2></div>
+    <div class="dialog-body about-body">
+      <div class="about-brand"><span class="brand-mark" aria-hidden="true">🍅</span><div><div class="about-name">tomato</div><div class="hint">QQ 群猫娘 · NoneBot2 控制台</div></div></div>
+      <p>基于 NoneBot2 + OneBot V11 的群聊机器人，支持 ollama 与 OpenAI 兼容两种模型源，记忆、表情包、水群概率都可以在这里调。</p>
+      <dl class="about-list">
+        <dt>控制台版本</dt><dd id="about-version">—</dd>
+        <dt>启动时间</dt><dd id="about-started">—</dd>
+        <dt>数据目录</dt><dd class="mono">webui_config.json · logs/</dd>
+      </dl>
+      <p class="hint">提示：这里保存的设置写进 <code>webui_config.json</code>，删掉它就会回到 <code>bot_config.py</code> 的默认值。</p>
+    </div>
+    <div class="dialog-foot"><span></span><div class="dialog-foot-actions"><button value="ok" type="submit" class="primary">好</button></div></div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
 </body>
 </html>
