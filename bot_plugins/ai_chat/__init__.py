@@ -9,7 +9,9 @@
 - ``pipeline``   记忆 + 生成 + 表情包 + 消息组装
 - ``runtime``    群状态与权限判断
 - ``messaging``  发送辅助
+- ``queue``      群内排队与按人合并
 - ``commands``   指令处理
+- ``private``    私聊（一对一，不加载群聊机制）
 
 指令前缀与旧版保持一致：`y`、`!`、`！`、`tomato`、`/`，
 例如 `ychat`、`y chat`、`!chatset p 3%`、`tomato chatcls`。
@@ -120,6 +122,10 @@ except ValueError:
     pass
 
 
+# 私聊 matcher 在 private.py 里注册，import 即生效（不含群聊的排队/水群/权限）
+from .private import handle_private_message, private_matcher  # noqa: E402
+
+
 __all__ = [
     "STATES",
     "GroupState",
@@ -127,6 +133,8 @@ __all__ = [
     "command_matcher",
     "handle_command",
     "handle_group_message",
+    "handle_private_message",
     "llm",
     "pipeline",
+    "private_matcher",
 ]

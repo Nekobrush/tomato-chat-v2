@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 import pytest
-from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message
+from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, PrivateMessageEvent
 from nonebot.adapters.onebot.v11.event import Sender
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,24 +43,35 @@ def _clean_state(plugin):
 
     chat_queue.reset("893")
     plugin.pipeline.reset_group("893")
+    plugin.pipeline.reset_group("private:12345")
     plugin.STATES.clear()
     plugin.STATES["893"] = plugin.GroupState()
     yield
     chat_queue.reset("893")
     plugin.pipeline.reset_group("893")
+    plugin.pipeline.reset_group("private:12345")
 
 
 class FakeBot:
     def __init__(self) -> None:
         self.sent: list[tuple[int, Message]] = []
+        self.private: list[tuple[int, Message]] = []
 
     async def send_group_msg(self, *, group_id: int, message: Message) -> None:
         self.sent.append((group_id, message))
+
+    async def send_private_msg(self, *, user_id: int, message: Message) -> None:
+        self.private.append((user_id, message))
 
     @property
     def last_text(self) -> str:
         assert self.sent, "机器人没有发送任何消息"
         return self.sent[-1][1].extract_plain_text()
+
+    @property
+    def last_private_text(self) -> str:
+        assert self.private, "机器人没有发送任何私聊消息"
+        return self.private[-1][1].extract_plain_text()
 
 
 def make_event(
@@ -231,3 +242,70 @@ async def test_msg_outside_allowed_group_ignored(plugin) -> None:
     # 规则层会拦住不在白名单的群，这里直接验证规则函数
     assert plugin._chat_rule(event) is False
     assert plugin._command_rule(event) is False
+
+
+# ---------------------------------------------------------------------------
+# 私聊：一对一，不走群聊的白名单/水群/排队/权限
+# ---------------------------------------------------------------------------
+
+
+def make_private_event(text: str = "", *, user_id: int = 12345) -> PrivateMessageEvent:
+    content = Message(text)
+    return PrivateMessageEvent(
+        time=int(time.time()),
+        self_id=10000,
+        post_type="message",
+        sub_type="friend",
+        user_id=user_id,
+        message_type="private",
+        message_id=2001,
+        message=content,
+        original_message=content,
+        raw_message=text,
+        font=0,
+        sender=Sender(user_id=user_id, nickname="tester"),
+        to_me=True,
+    )
+
+
+async def test_private_message_replies(plugin, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_chat(messages, *, model=None):
+        return "在的喵--*happy*--"
+
+    monkeypatch.setattr(plugin.pipeline.llm, "chat", fake_chat)
+    monkeypatch.setattr(plugin.pipeline, "pick_emotion_image", lambda emotion: None)
+    monkeypatch.setattr(plugin.pipeline.random, "random", lambda: 1.0)
+
+    bot = FakeBot()
+    await plugin.handle_private_message(bot, make_private_event("在吗"))
+    assert bot.last_private_text == "在的喵"
+    assert bot.sent == []
+    # 私聊记忆单独存，不污染群记忆
+    records = plugin.pipeline.store.records("private:12345")
+    assert [record.role for record in records] == ["user", "assistant"]
+    assert plugin.pipeline.store.count("893") == 0
+
+
+async def test_private_disabled_by_config(plugin, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bot_plugins.ai_chat import private as private_module
+
+    monkeypatch.setattr(plugin.cfg, "PRIVATE_CHAT_ENABLED", False)
+    assert private_module._private_rule(make_private_event("在吗")) is False
+
+
+async def test_private_whitelist(plugin, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bot_plugins.ai_chat import private as private_module
+
+    monkeypatch.setattr(plugin.cfg, "ALLOW_PRIVATE_USERS", {"999"})
+    assert private_module._private_rule(make_private_event("在吗")) is False
+    assert private_module._private_rule(make_private_event("在吗", user_id=999)) is True
+
+
+async def test_private_pure_image_ignored(plugin) -> None:
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    bot = FakeBot()
+    event = make_private_event()
+    event.message = Message(MessageSegment.image("a.jpg"))
+    await plugin.handle_private_message(bot, event)
+    assert bot.private == []

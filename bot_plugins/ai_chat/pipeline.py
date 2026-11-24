@@ -131,6 +131,7 @@ def build_messages(
     group_id: str,
     bot_id: int | str,
     focus: str | None = None,
+    note: str | None = None,
 ) -> list[dict[str, str]]:
     """组装请求消息，**让前缀尽量稳定**。
 
@@ -177,6 +178,9 @@ def build_messages(
         messages.append({"role": record.role, "content": content})
 
     tail_parts = [system_context(bot_id)["content"], *volatile_system]
+    if note:
+        # 场景说明（比如「这是私聊」）也放尾部，避免污染稳定前缀
+        tail_parts.append(note)
     if focus:
         # 聚焦指令放最后：离生成最近，锚定效果最强
         tail_parts.append(focus)
@@ -293,9 +297,10 @@ async def generate_reply(
     reply_id: int | None = None,
     *,
     focus: str | None = None,
+    note: str | None = None,
 ) -> Message:
     """调用模型并返回可直接发送的 Message。调用方必须持有该群的锁。"""
-    messages = build_messages(group_id, bot_id, focus=focus)
+    messages = build_messages(group_id, bot_id, focus=focus, note=note)
     raw = await llm.chat(messages)
 
     without_emoji = remove_emojis(raw)

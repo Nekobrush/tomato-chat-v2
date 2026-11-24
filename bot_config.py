@@ -99,6 +99,11 @@ PENDING_DEBOUNCE = 0.4     # 收到第一条后先等这么久，把同一波连
 PENDING_TTL = 20.0         # 待办超过这么久还没轮到就丢弃（秒），别回过时的话
 PENDING_TEXT_LIMIT = 200   # 合并后的待办文本最多保留多长（字符）
 
+# ------------------------------- 私聊 -------------------------------
+PRIVATE_CHAT_ENABLED = True       # 是否回应私聊
+ALLOW_PRIVATE_USERS = set()       # 留空=所有私聊用户；填 QQ 号则只回这些人
+PRIVATE_MEMORY_PREFIX = "private"  # 私聊记忆的键前缀，如 private:123456
+
 # ------------------------------- 表情包 -------------------------------
 EMOTION_PIC_PATH = BASE_DIR / "resources" / "emotions"
 # 允许的情绪（与 resources/emotions 下的文件夹名一致）
