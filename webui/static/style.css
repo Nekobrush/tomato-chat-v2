@@ -139,6 +139,8 @@ h1{font-size:20px;font-weight:650;line-height:1.35;overflow:hidden;text-overflow
 .tabs button.active::after{content:'';position:absolute;left:12px;right:12px;bottom:-1px;height:2.5px;border-radius:2px;background:var(--accent)}
 .view{display:flex;flex-direction:column;min-height:0;min-width:0}
 .page{flex:1;overflow:auto;padding:20px 24px 32px;background:var(--canvas)}
+/* 增量刷新：透明包装不参与布局，只用于按块比对替换 */
+.live-block{display:contents}
 .page-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 24px;border-bottom:1px solid var(--line);background:var(--panel)}
 .page-title{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:16px}
 .page-title h2{font-size:17px}

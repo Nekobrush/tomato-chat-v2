@@ -150,9 +150,10 @@
 
   /* ------------------------------------------------------------ 数据加载 */
 
-  async function loadStatus() {
+  async function loadStatus(force = false) {
     try {
       const data = await api("/status");
+      if (force) state.dirty = false; // 手动刷新：丢弃设置页未保存的编辑，回到服务端值
       state.status = data;
       state.fields = data.config.fields || [];
       if (!state.config || !state.dirty) state.config = data.config.values;
@@ -162,7 +163,9 @@
         if (state.view === "group") state.view = "overview";
       }
       if (!state.groupId && groups.length) state.groupId = groups[0].group_id;
+      const first = !state.booted;
       state.booted = true;
+      if (!first && !force && refreshLive()) return true;
       render();
       return true;
     } catch (err) {
@@ -240,7 +243,8 @@
     if (!visible.length && query) {
       entries.push(`<div class="empty" style="grid-column:1/-1;padding:24px 10px">没有匹配的群号</div>`);
     }
-    $("#groups").innerHTML = entries.join("");
+    const html = entries.join("");
+    if ($("#groups").innerHTML !== html) $("#groups").innerHTML = html;
     $("#footer-model").textContent = state.status.model?.model || "未选择模型";
     $("#footer-model").title = `${state.status.model?.label || ""} · ${state.status.model?.model || ""}`;
   }
@@ -314,9 +318,11 @@
       ];
     }
 
-    $("#title").textContent = title;
-    $("#meta").innerHTML = meta.join("");
-    $("#actions").innerHTML = actions.join("");
+    const metaHtml = meta.join("");
+    const actionsHtml = actions.join("");
+    if ($("#title").textContent !== title) $("#title").textContent = title;
+    if ($("#meta").innerHTML !== metaHtml) $("#meta").innerHTML = metaHtml;
+    if ($("#actions").innerHTML !== actionsHtml) $("#actions").innerHTML = actionsHtml;
   }
 
   function renderTabs() {
@@ -355,6 +361,43 @@
       view.innerHTML = viewLogs();
       loadLogs();
     }
+  }
+
+  /* -------------------------------------------------- 增量刷新（不重绘） */
+
+  function liveHtml() {
+    if (state.view === "overview") return viewOverview();
+    if (state.view === "group" && state.tab === "overview") return viewGroup();
+    return null;
+  }
+
+  // 只替换内容真的变了的块，其余 DOM 原样保留（选中文字、滚动位置都不动）
+  function syncView() {
+    const html = liveHtml();
+    if (!html) return false;
+    const probe = document.createElement("div");
+    probe.innerHTML = html;
+    const fresh = probe.querySelectorAll("[data-block]");
+    if (!fresh.length) return false;
+    for (const node of fresh) {
+      if (!document.querySelector(`#view [data-block="${node.dataset.block}"]`)) return false;
+    }
+    for (const node of fresh) {
+      const current = document.querySelector(`#view [data-block="${node.dataset.block}"]`);
+      if (current.innerHTML !== node.innerHTML) current.innerHTML = node.innerHTML;
+    }
+    return true;
+  }
+
+  // 轮询到达后的刷新：状态页增量、编辑页/试聊/记忆只更新外壳
+  function refreshLive() {
+    if (!state.booted) return false;
+    renderSidebar();
+    renderHeader();
+    if (state.view === "settings" || state.view === "prompts") return true; // 纯手动刷新
+    if (state.view === "overview" || (state.view === "group" && state.tab === "overview")) return syncView();
+    if (state.view === "group" && state.tab === "chat") updateChatHeaderOnly();
+    return true; // 记忆 / 日志 / 关于：内容由手动刷新或各自的定时器负责
   }
 
   /* -------------------------------------------------------- 视图：总览 */
@@ -443,11 +486,12 @@
     const groups = status.groups || [];
     return `
       <div class="page">
-        ${vitals(status)}
+        <div class="live-block" data-block="vitals">${vitals(status)}</div>
         <div class="page-title">
           <div><h2>群聊</h2><p>每个群的对话开关、自动聊天概率和记忆都在这里，点开可以细调。</p></div>
         </div>
-        <div class="overview-grid">
+        <div class="live-block" data-block="groups">
+          <div class="overview-grid">
           ${
             groups.length
               ? groups
@@ -473,13 +517,14 @@
                   .join("")
               : `<div class="empty" style="grid-column:1/-1"><strong>还没有添加群</strong>左下角输入群号，或者在 QQ 里发指令加群。</div>`
           }
+          </div>
         </div>
         <div class="page-title" style="margin-top:26px">
           <div><h2>模型与表情包</h2><p>当前使用的模型源，以及每个情绪下的表情包数量。</p></div>
         </div>
         <div class="status-sections">
-          ${modelCard(status)}
-          ${emotionCard(status)}
+          <div class="live-block" data-block="model">${modelCard(status)}</div>
+          <div class="live-block" data-block="emotions">${emotionCard(status)}</div>
         </div>
       </div>`;
   }
@@ -513,7 +558,7 @@
 
     return `
       <div class="page">
-        ${vitals({
+        <div class="live-block" data-block="vitals">${vitals({
           ...status,
           stats: {
             ...status.stats,
@@ -522,7 +567,8 @@
             record_total: records,
             max_memory: maxRecords,
           },
-        })}
+        })}</div>
+        <div class="live-block" data-block="cards">
         <div class="status-sections">
           ${
             test
@@ -576,7 +622,8 @@
               .join("")}</span></div>
           </div>
         </div>
-        ${emotionGrid(status)}
+        </div>
+        <div class="live-block" data-block="emotion-grid">${emotionGrid(status)}</div>
       </div>`;
   }
 
@@ -1099,16 +1146,49 @@
       </div>`;
   }
 
+  // /api/logs 返回的是「最后 N 行」，窗口会滑动；这里找旧窗口尾巴与新窗口开头的重叠长度
+  function logsOverlap(previous, lines) {
+    const max = Math.min(previous.length, lines.length);
+    for (let n = max; n > 0; n -= 1) {
+      let same = true;
+      for (let i = 0; i < n; i += 1) {
+        if (lines[i] !== previous[previous.length - n + i]) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return n;
+    }
+    return 0;
+  }
+
   async function loadLogs() {
     const consoleBox = $("#logs-console");
     if (!consoleBox) return;
     try {
       const data = await api("/logs?lines=400");
-      state.logs = data.lines || [];
-      consoleBox.innerHTML = state.logs.length
-        ? state.logs.map(logLine).join("")
-        : `<span class="log-empty">${esc(data.hint || "还没有日志，程序启动后会自动创建 logs/bot.log")}</span>`;
-      consoleBox.scrollTop = consoleBox.scrollHeight;
+      const lines = data.lines || [];
+      if (!lines.length) {
+        consoleBox.innerHTML = `<span class="log-empty">${esc(data.hint || "还没有日志，程序启动后会自动创建 logs/bot.log")}</span>`;
+        state.logs = [];
+        return;
+      }
+      const previous = state.logs || [];
+      const overlap = previous.length ? logsOverlap(previous, lines) : 0;
+      if (overlap > 0) {
+        // 只把新行插到末尾：不重建 <pre>，滚动位置和选中文字都不动
+        const fresh = lines.slice(overlap);
+        if (fresh.length) {
+          const atBottom = consoleBox.scrollHeight - consoleBox.scrollTop - consoleBox.clientHeight < 48;
+          consoleBox.insertAdjacentHTML("beforeend", fresh.map(logLine).join(""));
+          if (atBottom) consoleBox.scrollTop = consoleBox.scrollHeight;
+        }
+        while (consoleBox.childElementCount > 1200) consoleBox.removeChild(consoleBox.firstElementChild);
+      } else {
+        consoleBox.innerHTML = lines.map(logLine).join("");
+        consoleBox.scrollTop = consoleBox.scrollHeight;
+      }
+      state.logs = lines;
     } catch (err) {
       consoleBox.innerHTML = `<span class="log-line error">读取日志失败：${esc(err.message)}</span>`;
     }
@@ -1343,9 +1423,11 @@
     $("#view").addEventListener("change", (event) => {
       const target = event.target;
       if (target.matches("[data-key]") || target.closest("#models-editor")) markDirty();
-      if (target.id === "logs-auto") {
-        state.logAuto = target.checked;
-      }
+    });
+
+    // 顶栏的「自动刷新」勾选框：事件挂在顶层容器上，重绘内部节点不会丢监听
+    $("#actions").addEventListener("change", (event) => {
+      if (event.target.id === "logs-auto") state.logAuto = event.target.checked;
     });
 
     $("#view").addEventListener("keydown", (event) => {
@@ -1394,8 +1476,15 @@
     const groupId = element.dataset.group || state.groupId;
     switch (action) {
       case "refresh":
-        loadStatus().then(() => {
+        state.dirty = false;
+        loadStatus(true).then(() => {
           if (state.view === "group" && state.tab === "memory") loadMemory(state.groupId).then(() => render());
+          if (state.view === "prompts") {
+            loadPrompts().then(() => {
+              state.promptDirty = false;
+              if (state.view === "prompts") render();
+            });
+          }
         });
         break;
       case "refresh-logs":
@@ -1514,6 +1603,8 @@
   function startPolling() {
     setInterval(() => {
       if (document.hidden) return;
+      // 设置页 / 人格页是手动刷新，轮询不打断正在编辑的表单
+      if (state.view === "settings" || state.view === "prompts") return;
       loadStatus();
     }, 8000);
     setInterval(() => {
