@@ -302,6 +302,18 @@ def split_reply(text: str) -> list[str]:
     return [piece for piece in (item.strip() for item in chunks) if piece]
 
 
+def split_delay(previous_text: str) -> float:
+    """两条气泡之间的停顿：基准 + 按上一条字数线性增加 + 随机浮动。"""
+    base = max(0.0, float(cfg.SPLIT_DELAY_BASE))
+    per_char = max(0.0, float(cfg.SPLIT_DELAY_PER_CHAR))
+    jitter = max(0.0, float(cfg.SPLIT_DELAY_JITTER))
+
+    delay = base + per_char * len(previous_text)
+    if jitter:
+        delay += random.uniform(-jitter, jitter)
+    return max(0.0, delay)
+
+
 def compose_messages(text: str, emotions: list[str], reply_id: int | None) -> list[Message]:
     """把回复组装成一条或多条消息；分条时第一段带引用和配图。"""
     chunks = split_reply(text or prompts.EMPTY_REPLY)

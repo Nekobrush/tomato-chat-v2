@@ -71,7 +71,7 @@ async def handle_private_message(bot: Bot, event: PrivateMessageEvent) -> None:
 
     for index, message in enumerate(messages):
         if index:
-            await asyncio.sleep(max(0.0, float(cfg.SPLIT_DELAY)))
+            await asyncio.sleep(pipeline.split_delay(messages[index - 1].extract_plain_text()))
         await bot.send_private_msg(user_id=event.user_id, message=message)
 
 

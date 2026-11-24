@@ -136,9 +136,12 @@ RESP_LEN_LIMIT = 75
 # 分条发送：把一条回复切成多条消息气泡，中间停顿一下再发下一条
 # SPLIT_PATTERN 是正则（留空表示不按正则切），SPLIT_MAX_CHARS 是每条的字符上限
 # （0 表示不按字数截断），两个都关闭时就是整条发出去。
+# 停顿 = 基准 + 每条字符的追加时长 × 上一条的字数 ± 随机浮动，更像真人打字。
 SPLIT_PATTERN = ""
 SPLIT_MAX_CHARS = 0
-SPLIT_DELAY = 0.8
+SPLIT_DELAY_BASE = 0.6
+SPLIT_DELAY_PER_CHAR = 0.02
+SPLIT_DELAY_JITTER = 0.3
 
 
 # ------------------------------- WebUI 覆盖 -------------------------------
@@ -168,7 +171,9 @@ _OVERLAY_SCALARS = {
     "RESP_LEN_LIMIT": int,
     "SPLIT_PATTERN": str,
     "SPLIT_MAX_CHARS": int,
-    "SPLIT_DELAY": float,
+    "SPLIT_DELAY_BASE": float,
+    "SPLIT_DELAY_PER_CHAR": float,
+    "SPLIT_DELAY_JITTER": float,
 }
 
 

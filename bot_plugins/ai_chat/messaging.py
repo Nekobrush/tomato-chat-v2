@@ -7,7 +7,6 @@ import asyncio
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageSegment
 from nonebot.log import logger
 
-import bot_config as cfg
 from . import pipeline
 from .errors import LLMError
 
@@ -17,10 +16,10 @@ async def send(bot: Bot, event: GroupMessageEvent, message: Message | str) -> No
 
 
 async def send_all(bot: Bot, event: GroupMessageEvent, messages: list[Message]) -> None:
-    """依次发送多条气泡，中间按配置停顿。"""
+    """依次发送多条气泡，间隔按上一条的长度算。"""
     for index, message in enumerate(messages):
         if index:
-            await asyncio.sleep(max(0.0, float(cfg.SPLIT_DELAY)))
+            await asyncio.sleep(pipeline.split_delay(messages[index - 1].extract_plain_text()))
         await send(bot, event, message)
 
 

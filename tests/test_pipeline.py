@@ -228,6 +228,36 @@ def test_compose_messages_split_sends_multiple(monkeypatch: pytest.MonkeyPatch) 
     assert all([segment.type for segment in m] == ["text"] for m in messages)
 
 
+def test_split_delay_grows_with_length(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cfg, "SPLIT_DELAY_BASE", 0.6)
+    monkeypatch.setattr(cfg, "SPLIT_DELAY_PER_CHAR", 0.02)
+    monkeypatch.setattr(cfg, "SPLIT_DELAY_JITTER", 0)
+
+    short = pipeline.split_delay("你好")
+    long = pipeline.split_delay("你好" * 10)
+    assert short == pytest.approx(0.6 + 0.02 * 2)
+    assert long > short
+    assert long == pytest.approx(0.6 + 0.02 * 20)
+
+
+def test_split_delay_jitter_stays_in_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cfg, "SPLIT_DELAY_BASE", 1.0)
+    monkeypatch.setattr(cfg, "SPLIT_DELAY_PER_CHAR", 0)
+    monkeypatch.setattr(cfg, "SPLIT_DELAY_JITTER", 0.4)
+
+    delays = [pipeline.split_delay("随便一句") for _ in range(50)]
+    assert all(0.6 <= delay <= 1.4 for delay in delays)
+    assert len(set(round(delay, 3) for delay in delays)) > 1, "应该带随机浮动"
+
+
+def test_split_delay_never_negative(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cfg, "SPLIT_DELAY_BASE", 0.1)
+    monkeypatch.setattr(cfg, "SPLIT_DELAY_PER_CHAR", 0.02)
+    monkeypatch.setattr(cfg, "SPLIT_DELAY_JITTER", 5)
+
+    assert pipeline.split_delay("") >= 0.0
+
+
 def test_split_keeps_punctuation_with_capture_group(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cfg, "SPLIT_PATTERN", r"([。！？])")
     monkeypatch.setattr(cfg, "SPLIT_MAX_CHARS", 0)

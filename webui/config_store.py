@@ -46,8 +46,12 @@ FIELDS: list[dict[str, Any]] = [
      "help": "按这个正则把一条回复切成多条气泡，留空则不按正则切（例如 [。！？]；想保留标点用 ([。！？])）"},
     {"key": "SPLIT_MAX_CHARS", "label": "分条字符数", "kind": "int", "min": 0, "max": 500,
      "help": "每条气泡的字符上限，0 表示不按字数截断；留空即不截断"},
-    {"key": "SPLIT_DELAY", "label": "分条间隔（秒）", "kind": "float", "min": 0, "max": 10, "step": 0.1,
-     "help": "多条气泡之间停顿多久再发下一条"},
+    {"key": "SPLIT_DELAY_BASE", "label": "分条基准间隔（秒）", "kind": "float", "min": 0, "max": 30, "step": 0.1,
+     "help": "每两条气泡之间的基础停顿"},
+    {"key": "SPLIT_DELAY_PER_CHAR", "label": "每条字符追加（秒）", "kind": "float", "min": 0, "max": 1, "step": 0.001,
+     "help": "按上一条的字数线性增加停顿，例如 0.02 表示每个字多停 20 毫秒"},
+    {"key": "SPLIT_DELAY_JITTER", "label": "分条随机浮动（秒）", "kind": "float", "min": 0, "max": 10, "step": 0.1,
+     "help": "在算出的停顿上随机加减这么多秒，避免机器般均匀"},
 ]
 
 FIELD_BY_KEY: dict[str, dict[str, Any]] = {field["key"]: field for field in FIELDS}

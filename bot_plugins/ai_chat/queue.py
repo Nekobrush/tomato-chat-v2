@@ -136,7 +136,7 @@ async def _reply(bot: Bot, group_id: str, item: Pending) -> None:
         messages = [MessageSegment.reply(item.message_id) + MessageSegment.text(pipeline.fail_tip())]
     for index, message in enumerate(messages):
         if index:
-            await asyncio.sleep(max(0.0, float(cfg.SPLIT_DELAY)))
+            await asyncio.sleep(pipeline.split_delay(messages[index - 1].extract_plain_text()))
         await bot.send_group_msg(group_id=int(group_id), message=message)
 
 

@@ -54,12 +54,20 @@ def test_save_writes_overlay_and_applies_values(sandbox):
 
 def test_split_settings_roundtrip(sandbox):
     merged, _ = config_store.save(
-        {"SPLIT_PATTERN": r"[。！？]", "SPLIT_MAX_CHARS": 30, "SPLIT_DELAY": 1.2}
+        {
+            "SPLIT_PATTERN": r"[。！？]",
+            "SPLIT_MAX_CHARS": 30,
+            "SPLIT_DELAY_BASE": 0.5,
+            "SPLIT_DELAY_PER_CHAR": 0.03,
+            "SPLIT_DELAY_JITTER": 0.2,
+        }
     )
 
     assert cfg.SPLIT_PATTERN == r"[。！？]"
     assert cfg.SPLIT_MAX_CHARS == 30
-    assert cfg.SPLIT_DELAY == 1.2
+    assert cfg.SPLIT_DELAY_BASE == 0.5
+    assert cfg.SPLIT_DELAY_PER_CHAR == 0.03
+    assert cfg.SPLIT_DELAY_JITTER == 0.2
     assert merged["SPLIT_MAX_CHARS"] == 30
 
 
