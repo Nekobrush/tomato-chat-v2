@@ -1,4 +1,4 @@
-﻿**/__pycache__
+**/__pycache__
 resources/emotions/*/*
 
 # Python 虚拟环境
@@ -17,6 +17,9 @@ logs/
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
+.coverage
+coverage.xml
+htmlcov/
 
 # 启动器临时输出、本地截图与参考项目
 launcher.out.log
