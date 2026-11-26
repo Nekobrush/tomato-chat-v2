@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import os
@@ -437,6 +438,129 @@ async def export_book(book_id: str) -> dict[str, Any]:
         if book.id == book_id:
             return {"book": worldbook.book_to_st(book)}
     raise HTTPException(status_code=404, detail="没找到这本设定书。")
+
+
+# ---------------------------------------------------------------------------
+# 酒馆角色卡（JSON / PNG）
+# ---------------------------------------------------------------------------
+
+
+def _cards():
+    from bot_plugins.ai_chat import cards
+
+    return cards
+
+
+def _card_profile(raw: dict[str, Any]) -> dict[str, Any]:
+    cards = _cards()
+    return cards.card_profile(cards.normalize_card(raw))
+
+
+def _read_card(body: CardIn) -> dict[str, Any]:
+    cards = _cards()
+    if body.png_base64:
+        try:
+            data = base64.b64decode(body.png_base64.split(",", 1)[-1], validate=True)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail=f"PNG 数据不合法：{exc}") from exc
+        try:
+            raw = cards.card_json_from_png(data)
+        except cards.CardError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return cards.normalize_card(raw)
+    try:
+        raw = json.loads(body.json_text or "{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"JSON 解析失败：{exc}") from exc
+    try:
+        return cards.normalize_card(raw)
+    except cards.CardError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class CardIn(BaseModel):
+    json_text: str = ""
+    png_base64: str = ""
+    apply: bool = False
+
+
+@router.post("/cards/import")
+async def import_card(body: CardIn) -> dict[str, Any]:
+    prompts = _prompts()
+    card = _read_card(body)
+    profile = _cards().card_profile(card)
+    book = profile["book"]
+    summary = {
+        "name": profile["name"],
+        "persona_preview": profile["persona"][:400],
+        "persona_chars": len(profile["persona"]),
+        "example_user": profile["example_user"][:200],
+        "example_assistant": profile["example_assistant"][:200],
+        "book": (
+            {"name": book.name, "entries": len(book.entries)} if book is not None else None
+        ),
+        "applied": False,
+    }
+    if not body.apply:
+        return summary
+
+    values = prompts.current()
+    if profile["name"]:
+        values["ai_name"] = profile["name"]
+    if profile["persona"]:
+        values["persona"] = profile["persona"]
+    if profile["example_user"]:
+        values["example_user"] = profile["example_user"]
+    if profile["example_assistant"]:
+        values["example_assistant"] = profile["example_assistant"]
+    try:
+        prompts.save(values)
+    except prompts.PromptError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if book is not None:
+        worldbook = _worldbook()
+        books = [item for item in worldbook.load_books(_books_path()) if item.id != book.id]
+        books.append(book)
+        worldbook.save_books(_books_path(), books)
+        summary["book"] = {"name": book.name, "entries": len(book.entries), "imported": True}
+    summary["applied"] = True
+    return summary
+
+
+class PreviewIn(BaseModel):
+    text: str = Field(default="", max_length=500)
+
+
+@router.post("/preview")
+async def preview_messages(body: PreviewIn) -> dict[str, Any]:
+    from bot_plugins.ai_chat.memory import estimate_tokens
+
+    pipeline = _pipeline()
+    group = "webui-preview"
+    text = body.text.strip() or "你好呀"
+    pipeline.reset_group(group)
+    pipeline.remember_user(group, "预览用户", cfg.WEBUI_SESSION_BOT_ID, text)
+    messages = pipeline.build_messages(group, cfg.WEBUI_SESSION_BOT_ID)
+    pipeline.reset_group(group)
+    rendered = []
+    total_chars = 0
+    for message in messages:
+        content = str(message.get("content") or "")
+        total_chars += len(content)
+        rendered.append(
+            {
+                "role": message.get("role", ""),
+                "content": content,
+                "images": len(message.get("images") or []),
+                "chars": len(content),
+            }
+        )
+    return {
+        "messages": rendered,
+        "chars": total_chars,
+        "approx_tokens": estimate_tokens("名" * total_chars) if total_chars else 0,
+    }
 
 
 # ---------------------------------------------------------------------------

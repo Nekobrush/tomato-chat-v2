@@ -413,3 +413,12 @@ dialog::backdrop{background:#0d111a66}
   gap: 8px;
   padding-top: 8px;
 }
+
+/* 设定书导入对话框 */
+.book-dialog { width: min(720px, 92vw); }
+.book-dialog .book-json {
+  width: 100%;
+  min-height: 200px;
+  font: 12.5px/1.6 var(--code);
+  resize: vertical;
+}

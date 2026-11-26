@@ -181,7 +181,7 @@ def books() -> list[worldbook.Book]:
     if _books_cache is None or _books_mtime != mtime:
         _books_cache = worldbook.load_books(path)
         _books_mtime = mtime
-        logger.info("已加载 %d 本设定书", len(_books_cache))
+        logger.info(f"已加载 {len(_books_cache)} 本设定书")
     return _books_cache
 
 

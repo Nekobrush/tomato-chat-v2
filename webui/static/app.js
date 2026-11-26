@@ -1054,7 +1054,7 @@
           })
           .join("")}
       </section>`,
-    ).join("") + booksSection;
+    ).join("");
 
     return `
       <div class="settings-layout">
@@ -1218,7 +1218,9 @@
     return `
       <div class="books-toolbar">
         <button type="button" class="ghost" data-action="import-book">导入酒馆世界书 / 角色卡</button>
-        <span class="hint">支持世界书 v2（entries 为对象）与角色书（entries 为数组）。</span>
+        <button type="button" class="ghost" data-action="import-card">导入角色卡文件（PNG / JSON）</button>
+        <input type="file" id="card-file" accept=".png,.json,image/png,application/json" hidden>
+        <span class="hint">支持世界书 v2（entries 为对象）与角色书（entries 为数组）；角色卡会拆成人格层、示例与角色书。</span>
       </div>
       ${items}`;
   }
@@ -1255,7 +1257,7 @@
       enabled: entryEl.querySelector('[data-book-field="enabled"]').checked,
     };
     try {
-      const result = await api("/books/entry", { method: "PUT", body: payload });
+      const result = await api("/books/entry", { method: "PUT", body: JSON.stringify(payload) });
       const index = (state.books.books || []).findIndex((item) => item.id === result.book.id);
       if (index >= 0) state.books.books[index] = result.book;
       toast("条目已保存");
@@ -1265,15 +1267,34 @@
   }
 
   async function importBook() {
-    const pasted = window.prompt("把酒馆世界书或角色书的 JSON 粘贴到这里：");
+    const dialog = $("#book-dialog");
+    const input = $("#book-json");
+    if (!dialog || !input) return;
+    input.value = "";
+    const errorBox = $("#book-error");
+    if (errorBox) {
+      errorBox.hidden = true;
+      errorBox.textContent = "";
+    }
+    dialog.showModal();
+    input.focus();
+    const pasted = await new Promise((resolve) => {
+      dialog.addEventListener("close", () => resolve(dialog.returnValue === "ok" ? input.value.trim() : ""), { once: true });
+    });
     if (!pasted) return;
     try {
-      const result = await api("/books/import", { method: "POST", body: { json_text: pasted } });
+      const result = await api("/books/import", { method: "POST", body: JSON.stringify({ json_text: pasted }) });
       state.books = { books: result.books };
       toast("已导入");
       render();
     } catch (error) {
       toast(`导入失败：${error.message}`);
+      dialog.showModal();
+      input.value = pasted;
+      if (errorBox) {
+        errorBox.hidden = false;
+        errorBox.textContent = `导入失败：${error.message}`;
+      }
     }
   }
 
@@ -1305,19 +1326,109 @@
     }
   }
 
+  function readCardFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("读取文件失败"));
+      if (file.name.toLowerCase().endsWith(".png")) {
+        reader.onload = () => resolve({ png_base64: String(reader.result) });
+        reader.readAsDataURL(file);
+      } else {
+        reader.onload = () => resolve({ json_text: String(reader.result) });
+        reader.readAsText(file, "utf-8");
+      }
+    });
+  }
+
+  async function importCardFile(file) {
+    if (!file) return;
+    let payload;
+    try {
+      payload = await readCardFile(file);
+    } catch (error) {
+      toast(error.message, "error");
+      return;
+    }
+    let preview;
+    try {
+      preview = await api("/cards/import", { method: "POST", body: JSON.stringify(payload) });
+    } catch (error) {
+      toast(`解析角色卡失败：${error.message}`, "error");
+      return;
+    }
+    const lines = [
+      `名字：${preview.name || "（无）"}`,
+      `人格层：${preview.persona_chars} 字`,
+      preview.book ? `角色书：${preview.book.name}（${preview.book.entries} 条）` : "角色书：没有",
+      "",
+      "导入会覆盖「人格设定」和两条示例，并写入角色书。确定吗？",
+    ];
+    const ok = await confirmAction("导入角色卡", lines.join("\n"), "导入");
+    if (!ok) return;
+    try {
+      await api("/cards/import", { method: "POST", body: JSON.stringify({ ...payload, apply: true }) });
+      await Promise.all([loadPrompts(), loadBooks()]);
+      state.promptDirty = false;
+      render();
+      toast("角色卡已导入");
+    } catch (error) {
+      toast(`导入失败：${error.message}`, "error");
+    }
+  }
+
+  function renderPreview(data) {
+    const box = $("#preview-out");
+    if (!box) return;
+    const items = (data.messages || [])
+      .map(
+        (message) => `
+        <div class="preview-item">
+          <div class="preview-head"><span class="badge">${esc(message.role)}</span><span class="hint">${message.chars} 字${message.images ? ` · ${message.images} 张图` : ""}</span></div>
+          <pre>${esc(message.content)}</pre>
+        </div>`,
+      )
+      .join("");
+    box.innerHTML = `<div class="hint">共 ${data.messages.length} 条消息，${data.chars} 字，约 ${data.approx_tokens} token</div>${items}`;
+  }
+
+  async function previewMessages() {
+    const input = $("#preview-text");
+    const text = (input?.value || "").trim();
+    const box = $("#preview-out");
+    if (box) box.innerHTML = `<div class="hint">正在组装…</div>`;
+    try {
+      renderPreview(await api("/preview", { method: "POST", body: JSON.stringify({ text }) }));
+    } catch (error) {
+      if (box) box.innerHTML = `<div class="hint">生成失败：${esc(error.message)}</div>`;
+    }
+  }
+
   function viewPrompts() {
     if (!state.prompts) return `<div class="empty" style="padding:40px 0">正在读取提示词…</div>`;
     const values = state.prompts.values || {};
-    const booksIndex = `<button type="button" data-prompt-scroll="${PROMPT_GROUPS.length}">设定书</button>`;
+    const booksOffset = PROMPT_GROUPS.length;
+    const previewOffset = booksOffset + 1;
+    const booksIndex = `<button type="button" data-prompt-scroll="${booksOffset}">设定书</button>`;
+    const previewIndex = `<button type="button" data-prompt-scroll="${previewOffset}">调试预览</button>`;
     const booksSection = `
-      <section class="setting-group" id="prompt-group-${PROMPT_GROUPS.length}">
+      <section class="setting-group" id="prompt-group-${booksOffset}">
         <h3>设定书（世界书 / 角色书）</h3>
         <p>酒馆格式。命中关键词的条目会拼进每轮消息的尾部（不是真的插在角色定义前后——LM Studio 的模板不允许中途出现 system 消息）。</p>
         ${renderBooks()}
       </section>`;
+    const previewSection = `
+      <section class="setting-group" id="prompt-group-${previewOffset}">
+        <h3>调试预览</h3>
+        <p>看看这一轮实际会发给模型什么：稳定前缀、示例、记忆，以及尾部拼上的时间、设定书与纠正提示。</p>
+        <div class="preview-controls">
+          <input type="text" id="preview-text" placeholder="用一句话模拟群友发来的消息，例如：番茄是谁呀？">
+          <button type="button" class="primary" data-action="preview-messages">生成预览</button>
+        </div>
+        <div id="preview-out" class="preview-out"></div>
+      </section>`;
     const index = PROMPT_GROUPS.map(
       (group, offset) => `<button type="button" data-prompt-scroll="${offset}" class="${offset === 0 ? "active" : ""}">${esc(group.title)}</button>`,
-    ).join("") + booksIndex;
+    ).join("") + booksIndex + previewIndex;
     const body = PROMPT_GROUPS.map(
       (group, offset) => `
       <section class="setting-group" id="prompt-group-${offset}">
@@ -1338,7 +1449,7 @@
           })
           .join("")}
       </section>`,
-    ).join("") + booksSection;
+    ).join("") + booksSection + previewSection;
 
     return `
       <div class="settings-layout">
@@ -1734,6 +1845,12 @@
 
     $("#view").addEventListener("change", (event) => {
       const target = event.target;
+      if (target.id === "card-file") {
+        const file = target.files && target.files[0];
+        target.value = "";
+        if (file) importCardFile(file);
+        return;
+      }
       if (target.id === "chat-file") {
         addChatFiles(target.files);
         target.value = "";
@@ -1945,6 +2062,12 @@
         break;
       case "import-book":
         importBook();
+        return;
+      case "import-card":
+        $("#card-file")?.click();
+        return;
+      case "preview-messages":
+        previewMessages();
         return;
       case "export-book":
         exportBook(element.dataset.book);

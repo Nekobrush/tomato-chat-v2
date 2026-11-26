@@ -24,9 +24,18 @@ multimodal image input.
   concurrency and vision support can be set per source.
 - **Web console** at `http://127.0.0.1:8765/webui/` — live status, per-group switches,
   model switching, log viewer, test chat (drag & drop images), and a prompt editor.
-- **Editable persona** — the whole system prompt, few-shot examples, correction tips,
-  fallback copy and scene notes live in `webui_prompts.json` and can be edited in the
-  browser. Nothing needs a restart.
+- **Editable persona** — the persona is split into three layers (stable prefix, speaking
+  style, character sheet) plus few-shot examples, correction tips, fallback copy and scene
+  notes; all of it lives in `webui_prompts.json` and can be edited in the browser. Nothing
+  needs a restart.
+- **Tavern-compatible world books** — import SillyTavern World Info v2 / character books
+  (paste JSON or drop a character card), edit entries in the console, export back to the same
+  format. Matched entries are appended to the tail of the current message, never spliced into
+  the middle of the prompt.
+- **Character cards** — import a Tavern character card as PNG (`chara` / `ccv3` text chunk) or
+  JSON; it is previewed first, then split into persona, examples and a character book.
+- **Prompt debugger** — type one message and see exactly what would be sent to the model this
+  turn: every message, character count, image count and a token estimate.
 - **Message decoration** — optional start marker, prefix, suffix and end marker, assembled as
   `start + prefix + body + suffix + trailing punctuation + end`; the suffix is inserted
   before a trailing punctuation mark, the end marker always goes last.
@@ -101,6 +110,7 @@ Two layers:
 | `bot_config.py` | Business defaults: model sources, probabilities, memory, vision, splitting |
 | `webui_config.json` | Overrides written by the console; delete it to fall back to `bot_config.py` |
 | `webui_prompts.json` | Persona and prompt overrides; delete it to restore the built-in defaults |
+| `webui_books.json` | Tavern world books / character books; delete it to drop all of them |
 
 Model source example:
 
@@ -156,7 +166,7 @@ request no longer comes from localhost, the console requires that token.
 
 ```bash
 pip install -r requirements-dev.txt
-pytest -q          # 227 tests
+pytest -q          # 258 tests
 ruff check .       # lint
 ```
 

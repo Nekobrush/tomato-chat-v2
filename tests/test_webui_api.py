@@ -412,3 +412,134 @@ def test_books_import_edit_export_delete(client, sandbox, monkeypatch):
 
     assert client.post("/api/books/import", json={"json_text": "not json"}).status_code == 400
     assert client.put("/api/books/entry", json={"book_id": "missing", "uid": 0}).status_code == 404
+
+
+CARD_V2 = {
+    "spec": "chara_card_v2",
+    "spec_version": "2.0",
+    "data": {
+        "name": "小满",
+        "description": "小满是一个爱睡觉的猫娘。",
+        "personality": "懒散、粘人。",
+        "scenario": "深夜的便利店。",
+        "first_mes": "哈啊……现在几点了喵？",
+        "mes_example": "<START>\n{{user}}: 你好呀\n{{char}}: 你好喵～",
+        "system_prompt": "",
+        "post_history_instructions": "",
+        "character_book": {
+            "name": "小满的世界",
+            "entries": [
+                {
+                    "uid": 0,
+                    "key": ["小满"],
+                    "content": "小满最喜欢金枪鱼罐头。",
+                    "comment": "喜好",
+                    "disable": False,
+                }
+            ],
+        },
+    },
+}
+
+
+def test_card_import_preview_and_apply(client, sandbox, monkeypatch):
+    from bot_plugins.ai_chat import prompts
+
+    monkeypatch.setattr(prompts, "PROMPTS_FILE", sandbox / "webui_prompts.json")
+    monkeypatch.setattr(cfg, "WORLDBOOK_FILE", sandbox / "webui_books.json")
+
+    preview = client.post("/api/cards/import", json={"json_text": json.dumps(CARD_V2)})
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["name"] == "小满"
+    assert body["persona_chars"] > 0
+    assert body["book"]["entries"] == 1
+    assert body["applied"] is False
+    assert not (sandbox / "webui_books.json").exists()
+
+    applied = client.post(
+        "/api/cards/import", json={"json_text": json.dumps(CARD_V2), "apply": True}
+    )
+    assert applied.status_code == 200
+    assert applied.json()["applied"] is True
+
+    values = client.get("/api/prompts").json()["values"]
+    assert values["ai_name"] == "小满"
+    assert "爱睡觉的猫娘" in values["persona"]
+    assert values["example_assistant"].startswith("你好喵")
+
+    books = client.get("/api/books").json()["books"]
+    assert len(books) == 1
+    assert books[0]["kind"] == "character"
+    assert books[0]["entries"][0]["content"] == "小满最喜欢金枪鱼罐头。"
+
+    assert client.post("/api/cards/import", json={"json_text": "{}"}).status_code == 400
+    assert client.post("/api/cards/import", json={"png_base64": "not-base64"}).status_code == 400
+
+
+def _png_with_card(payload: dict) -> bytes:
+    import base64
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+    text = b"chara\x00" + base64.b64encode(json.dumps(payload).encode("utf-8"))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0))
+        + chunk(b"tEXt", text)
+        + chunk(b"IEND", b"")
+    )
+
+
+def test_card_import_from_png(client, sandbox, monkeypatch):
+    from bot_plugins.ai_chat import cards, prompts
+
+    monkeypatch.setattr(prompts, "PROMPTS_FILE", sandbox / "webui_prompts.json")
+    monkeypatch.setattr(cfg, "WORLDBOOK_FILE", sandbox / "webui_books.json")
+
+    png = _png_with_card(CARD_V2)
+    assert cards.card_json_from_png(png)["data"]["name"] == "小满"
+
+    import base64
+
+    encoded = base64.b64encode(png).decode("ascii")
+    response = client.post("/api/cards/import", json={"png_base64": encoded})
+    assert response.status_code == 200
+    assert response.json()["name"] == "小满"
+
+
+def test_preview_shows_worldbook_hint(client, sandbox, monkeypatch):
+    from bot_plugins.ai_chat import pipeline, worldbook
+
+    monkeypatch.setattr(cfg, "WORLDBOOK_FILE", sandbox / "webui_books.json")
+    monkeypatch.setattr(cfg, "WORLDBOOK_ENABLED", True)
+    book = worldbook.book_from_st(
+        {
+            "name": "预览用",
+            "entries": [
+                {
+                    "uid": 0,
+                    "key": ["小满"],
+                    "content": "小满最喜欢金枪鱼罐头。",
+                    "comment": "喜好",
+                    "disable": False,
+                }
+            ],
+        }
+    )
+    worldbook.save_books(sandbox / "webui_books.json", [book])
+    monkeypatch.setattr(pipeline, "_books_cache", None)
+
+    response = client.post("/api/preview", json={"text": "小满喜欢吃什么？"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["messages"][0]["role"] == "system"
+    assert data["messages"][-1]["role"] == "user"
+    assert any("【设定书】" in item["content"] for item in data["messages"])
+    assert data["approx_tokens"] > 0
+    assert pipeline.store.count("webui-preview") == 0
+

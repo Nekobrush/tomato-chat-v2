@@ -108,6 +108,24 @@
   </form>
 </dialog>
 
+<dialog id="book-dialog" class="dialog book-dialog">
+  <form method="dialog">
+    <div class="dialog-head"><h2>导入设定书</h2></div>
+    <div class="dialog-body">
+      <p class="hint">把酒馆世界书（World Info）或角色卡里的 <code>character_book</code> JSON 粘贴进来。支持 <code>entries</code> 为对象（世界书 v2）或数组（角色书）。</p>
+      <textarea id="book-json" class="book-json" rows="12" spellcheck="false" placeholder='{"name":"我的世界书","entries":{"0":{"key":["关键词"],"content":"设定内容"}}}'></textarea>
+      <p id="book-error" class="form-error" hidden></p>
+    </div>
+    <div class="dialog-foot">
+      <span>只会读取关键词、内容、触发方式等字段</span>
+      <div class="dialog-foot-actions">
+        <button value="cancel" type="submit" class="ghost">取消</button>
+        <button id="book-import-ok" value="ok" type="submit" class="primary">导入</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
 <div id="toast" class="toast" hidden></div>
 </body>
 </html>
