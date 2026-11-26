@@ -23,8 +23,9 @@ def _payload() -> dict:
 
 def test_defaults_render_placeholders() -> None:
     data = prompts.current()
-    assert "{ai_name}" in data["system"]
-    assert "{emotions}" in data["system"]
+    combined = data["prefix"] + data["style"] + data["persona"]
+    assert "{ai_name}" in combined
+    assert "{emotions}" in data["prefix"]
     assert data["ai_name"] == cfg.AI_NAME
     assert prompts.defaults()["ai_name"] == prompts.DEFAULT_AI_NAME
 
@@ -38,12 +39,12 @@ def test_defaults_render_placeholders() -> None:
 
 def test_save_updates_runtime_immediately() -> None:
     payload = _payload()
-    payload["system"] = payload["system"] + "\n另外：你说话要更简短一点喵。"
+    payload["persona"] = payload["persona"] + "\n另外：你说话要更简短一点喵。"
     saved = prompts.save(payload)
 
     assert prompts.PROMPTS_FILE.exists()
-    assert prompts.current()["system"].endswith("更简短一点喵。")
-    assert saved["system"] == payload["system"]
+    assert prompts.current()["persona"].endswith("更简短一点喵。")
+    assert saved["persona"] == payload["persona"]
     assert "更简短一点喵。" in prompts.SYSTEM_PROMPT
 
 
@@ -60,8 +61,8 @@ def test_save_a_custom_tip_and_reqfail() -> None:
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
-        (lambda data: data.update(system="   "), "人设"),
-        (lambda data: data.update(system="没有占位符的人设"), "占位符"),
+        (lambda data: data.update(persona="   "), "人格设定"),
+        (lambda data: data.update(prefix="", style="", persona="没有占位符"), "占位符"),
         (lambda data: data.update(reqfail_tips=[]), "失败提示"),
         (lambda data: data.update(reqfail_tips=["a", "b", "c", "d", "e", "f"]), "最多 5 条"),
     ],
@@ -76,7 +77,7 @@ def test_invalid_payload_raises(mutate, message: str) -> None:
 
 def test_reset_removes_file_and_restores_defaults() -> None:
     payload = _payload()
-    payload["system"] = payload["system"] + "\n临时改动喵。"
+    payload["persona"] = payload["persona"] + "\n临时改动喵。"
     prompts.save(payload)
     assert "临时改动喵。" in prompts.SYSTEM_PROMPT
 

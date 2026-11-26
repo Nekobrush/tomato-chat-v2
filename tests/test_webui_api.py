@@ -264,18 +264,18 @@ def test_prompts_roundtrip_and_validation(client, sandbox, monkeypatch):
     monkeypatch.setattr(prompts, "PROMPTS_FILE", sandbox / "webui_prompts.json")
 
     data = client.get("/api/prompts").json()
-    assert data["fields"] and "system" in data["values"]
+    assert data["fields"] and "persona" in data["values"] and "prefix" in data["values"]
     assert data["file"] == "webui_prompts.json"
     assert data["values"]["ai_name"] == "tomato"
     assert data["defaults"]["ai_name"] == "tomato"
 
     values = dict(data["values"])
-    values["system"] = values["system"] + "\n额外设定喵。"
+    values["persona"] = values["persona"] + "\n额外设定喵。"
     values["ai_name"] = "mikan"
     saved = client.post("/api/prompts", json={"values": values})
 
     assert saved.status_code == 200
-    assert "额外设定喵" in saved.json()["values"]["system"]
+    assert "额外设定喵" in saved.json()["values"]["persona"]
     assert "额外设定喵" in prompts.SYSTEM_PROMPT
     assert "mikan" in prompts.SYSTEM_PROMPT
     assert (sandbox / "webui_prompts.json").exists()
@@ -284,7 +284,7 @@ def test_prompts_roundtrip_and_validation(client, sandbox, monkeypatch):
     assert prompts.SYSTEM_PROMPT.count("mikan") >= 1
 
     bad = dict(values)
-    bad["system"] = ""
+    bad["persona"] = ""
     assert client.post("/api/prompts", json={"values": bad}).status_code == 400
 
     bad_name = dict(values)
