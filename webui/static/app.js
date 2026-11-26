@@ -383,8 +383,12 @@
       view.innerHTML = viewLogs();
       loadLogs();
     }
-    // 设置 / 人格页：整块铺满可视区，保存栏固定在最底部（CSS 用 .view-paged 切换布局）
-    view.classList.toggle("view-paged", state.view === "settings" || state.view === "prompts");
+    // 设置 / 人格页：整块铺满可视区，保存栏固定在最底部
+    // 这里同时写内联样式：样式表被浏览器缓存时（旧的没有 .view-paged 规则）也能生效
+    const paged = state.view === "settings" || state.view === "prompts";
+    view.classList.toggle("view-paged", paged);
+    view.style.display = paged ? "grid" : "";
+    view.style.gridTemplateRows = paged ? "minmax(0,1fr) auto" : "";
   }
 
   /* -------------------------------------------------- 增量刷新（不重绘） */

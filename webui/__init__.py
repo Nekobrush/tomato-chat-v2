@@ -55,6 +55,24 @@ def setup(app: FastAPI) -> FastAPI:
     app.include_router(public_router, prefix="/api")
     app.include_router(router, prefix="/api")
     app.mount("/webui", StaticFiles(directory=str(STATIC_DIR), html=True), name="webui")
+
+    @app.middleware("http")
+    async def no_cache_static(request, call_next):  # type: ignore[no-untyped-def]
+        """前端文件一律不缓存。
+
+        控制台是本地小应用，静态文件改动频繁；浏览器按 304 复用旧 CSS/JS
+        会导致「代码已改、页面还是老样子」，这里直接禁用缓存。
+        """
+        response = await call_next(request)
+        path = request.url.path
+        suffix = path.rsplit(".", 1)[-1]
+        if path.startswith("/webui/") and (
+            suffix in {"js", "css", "html"} or path.endswith("/")
+        ):
+            response.headers["Cache-Control"] = "no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+        return response
+
     app.add_api_route(
         "/",
         lambda: RedirectResponse(url="/webui/"),
