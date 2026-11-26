@@ -258,7 +258,9 @@ h1{font-size:20px;font-weight:650;line-height:1.35;overflow:hidden;text-overflow
 .memory-item.system .memory-text{color:var(--ink-2)}
 
 /* 设置 */
-.settings-layout{display:grid;grid-template-columns:186px minmax(0,1fr);flex:1;min-height:0;overflow:hidden;background:var(--canvas)}
+.settings-layout{display:grid;grid-template-columns:186px minmax(0,1fr);grid-template-rows:minmax(0,1fr);min-height:0;overflow:hidden;background:var(--canvas)}
+/* 设置 / 人格页：整块铺满可视区域，底部保存栏固定在最后一行，正文自己滚动 */
+.view:has(>.settings-layout){display:grid;grid-template-rows:minmax(0,1fr) auto}
 .settings-index{overflow:auto;padding:16px 8px 16px 16px;border-right:1px solid var(--line);background:var(--panel)}
 .settings-index button{display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;text-align:left;padding:7px 10px;border-radius:7px;color:var(--ink-2);font-size:13.5px}
 .settings-index button:hover{background:var(--hover);color:var(--ink)}
