@@ -51,6 +51,11 @@ KEEP_PREFIX_RECORDS = 2
 
 _TIMESTAMP_PREFIX = re.compile(r"^\[\d{10,16}\]")
 
+# 合并过的记录里可能嵌着多个 `[时间戳]昵称(QQ号):` 头（旧版合并方式留下的）。
+# 时间戳对模型没有价值（它只需要昵称和先后顺序），所以沿用时序渲染时统一去掉；
+# 昵称/QQ 号保留，否则合并记录里好几个人说话就分不清谁是谁。
+_ANY_TIMESTAMP = re.compile(r"\[\d{10,16}\]")
+
 _SENTENCE_ENDINGS = "。！？!?…；;，,、"
 
 
@@ -146,7 +151,16 @@ def system_context(bot_id: int | str) -> dict[str, str]:
 
 
 def _strip_timestamp(content: str) -> str:
-    return _TIMESTAMP_PREFIX.sub("", content, count=1)
+    """去掉旧记录里的头部（含合并记录中的嵌套头），并清理多余空行。
+
+    只对「较旧的」记录调用；最近两条保留原始格式，让模型知道这轮是谁说的。
+    旧版合并把整条格式化消息拼进前一条，于是同一行里塞了好几个
+    `[1795623983000]喵(123):`，还会因为截断留下 `…5624066000]` 这种残片。
+    """
+    cleaned = _ANY_TIMESTAMP.sub("", content.replace("\r\n", "\n"))
+    cleaned = re.sub(r"\.{0,1}\d{4,16}\]", "", cleaned)  # 截断残留的半截时间戳
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip() or content.strip()
 
 
 def memory_budget() -> int:

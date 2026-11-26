@@ -46,6 +46,17 @@ def estimate_tokens(text: str) -> int:
     return int(cjk * 0.6 + others * 0.25) + 1
 
 
+_HEADER_PATTERN = re.compile(r"^\[\d{10,16}\][^\n]*:\n")
+
+
+def _split_header(content: str) -> tuple[str, str]:
+    """拆出 `[时间戳]昵称(QQ号):\n` 头与正文；没有头时 head 为空。"""
+    match = _HEADER_PATTERN.match(content)
+    if not match:
+        return "", content
+    return match.group(0), content[match.end():]
+
+
 def _truncate(content: str) -> str:
     """把内容截断到 MERGE_MAX_LEN：保留首行头部，正文保留最新的一段。"""
     limit = cfg.MERGE_MAX_LEN
@@ -269,7 +280,12 @@ class MemoryStore:
             return False
         if last.mark != DEFAULT_MARK or previous.mark != DEFAULT_MARK:
             return False
-        previous.content = _truncate(f"{previous.content}\n{last.content}")
+        header, previous_body = _split_header(previous.content)
+        _, last_body = _split_header(last.content)
+        # 只拼正文：旧做法把整条格式化消息拼进去，合并记录里会重复出现
+        # `[时间戳]昵称(QQ号):` 头，既占 token 又让模型认错人。
+        body = previous_body if not last_body else f"{previous_body}\n{last_body}"
+        previous.content = _truncate(f"{header}{body}" if header else body)
         records.pop()
         self._persist(group_id)
         return True

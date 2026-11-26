@@ -153,6 +153,26 @@ def test_build_messages_strips_old_timestamps() -> None:
     assert dialog[-1]["content"].startswith("[1763000000000]")
 
 
+def test_build_messages_strips_nested_timestamps() -> None:
+    """旧版合并记录里塞着多个 [时间戳] 头，渲染时只留昵称、不留时间戳。"""
+    group_id = "test-nested"
+    pipeline.reset_group(group_id)
+    # 旧版合并留下的记录：一条里塞了两个头
+    pipeline.store.append(
+        group_id,
+        "user",
+        "[1763000000000]喵(123):\n第一句\n[1763000005000]豆沙烧饼(456):\n第二句",
+    )
+    for index in range(4):
+        pipeline.remember_user(group_id, "小明", 123, f"第{index}句", 1763000000000)
+    messages = pipeline.build_messages(group_id, BOT_ID)
+    dialog = [m for m in messages if m["role"] in {"user", "assistant"}]
+    merged = next(m for m in dialog if "第二句" in m["content"])
+    assert "[1763000000" not in merged["content"]
+    assert "喵(123):" in merged["content"]
+    assert "豆沙烧饼(456):" in merged["content"]
+
+
 def test_system_context_uses_ms() -> None:
     context = pipeline.system_context(BOT_ID)
     assert context["role"] == "system"

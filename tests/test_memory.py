@@ -158,3 +158,16 @@ def test_storage_is_optional() -> None:
     store = MemoryStore(2)
     store.append("g", "user", "hi")
     assert store.count("g") == 1
+
+
+def test_merge_user_tail_keeps_single_header() -> None:
+    store = MemoryStore(max_record=10)
+    store.append("g", "user", "[1763000000000]小明(123):\n第一句")
+    store.append("g", "user", "[1763000001000]小明(123):\n第二句")
+    assert store.merge_user_tail("g") is True
+    records = store.records("g")
+    assert len(records) == 1
+    content = records[0].content
+    assert content.count("[1763000000") == 1
+    assert "第一句" in content
+    assert "第二句" in content
