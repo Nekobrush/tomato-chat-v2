@@ -173,6 +173,32 @@ def test_build_messages_strips_nested_timestamps() -> None:
     assert "豆沙烧饼(456):" in merged["content"]
 
 
+def test_worldbook_hits_are_injected_at_the_tail(tmp_path, monkeypatch) -> None:
+    from bot_plugins.ai_chat import worldbook
+
+    book = worldbook.book_from_st(
+        {"name": "b", "entries": [{"key": ["龙"], "content": "这个世界的龙会说人话。", "uid": 0}]},
+        fallback_name="b",
+    )
+    path = tmp_path / "books.json"
+    worldbook.save_books(path, [book])
+    monkeypatch.setattr(pipeline.cfg, "WORLDBOOK_FILE", path)
+    monkeypatch.setattr(pipeline.cfg, "WORLDBOOK_ENABLED", True)
+    monkeypatch.setattr(pipeline, "_books_cache", None)
+    monkeypatch.setattr(pipeline, "_books_mtime", None)
+
+    group_id = "test-books"
+    pipeline.reset_group(group_id)
+    pipeline.remember_user(group_id, "小明", 123, "我今天看到一条龙", 1763000000000)
+
+    messages = pipeline.build_messages(group_id, BOT_ID)
+    last_user = [m for m in messages if m["role"] == "user"][-1]
+    assert "【设定书】" in last_user["content"]
+    assert "龙会说人话" in last_user["content"]
+    # 设定书只进尾部，不能污染稳定的第一条 system
+    assert "龙会说人话" not in messages[0]["content"]
+
+
 def test_system_context_uses_ms() -> None:
     context = pipeline.system_context(BOT_ID)
     assert context["role"] == "system"

@@ -10,7 +10,9 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
+import pathlib
 import re
 import secrets
 import time
@@ -304,6 +306,137 @@ async def save_prompts(body: PromptsIn) -> dict[str, Any]:
 async def reset_prompts() -> dict[str, Any]:
     prompts = _prompts()
     return {"values": prompts.reset(), "defaults": prompts.defaults(), "fields": prompts.FIELDS}
+
+
+# ---------------------------------------------------------------------------
+# 设定书（世界书 / 角色书）
+# ---------------------------------------------------------------------------
+
+
+def _worldbook():
+    from bot_plugins.ai_chat import worldbook
+
+    return worldbook
+
+
+def _books_path():
+    return pathlib.Path(cfg.WORLDBOOK_FILE)
+
+
+def _book_summary(book) -> dict[str, Any]:
+    return {
+        "id": book.id,
+        "name": book.name,
+        "kind": book.kind,
+        "entries": [
+            {
+                "uid": entry.uid,
+                "title": entry.title,
+                "keys": entry.keys,
+                "keys_secondary": entry.keys_secondary,
+                "content": entry.content,
+                "enabled": entry.enabled,
+                "constant": entry.constant,
+                "order": entry.order,
+                "probability": entry.probability,
+                "position": entry.position,
+                "logic": entry.logic,
+            }
+            for entry in book.sorted_entries()
+        ],
+    }
+
+
+class BookImport(BaseModel):
+    book: Any = Field(default=None)
+    json_text: str = ""
+    kind: str = "world"
+
+
+class EntryIn(BaseModel):
+    book_id: str
+    uid: int
+    title: str | None = None
+    content: str | None = None
+    keys: list[str] | None = None
+    enabled: bool | None = None
+    constant: bool | None = None
+    probability: int | None = None
+
+
+@router.get("/books")
+async def list_books() -> dict[str, Any]:
+    worldbook = _worldbook()
+    books = worldbook.load_books(_books_path())
+    return {
+        "books": [_book_summary(book) for book in books],
+        "file": _books_path().name,
+        "enabled": bool(getattr(cfg, "WORLDBOOK_ENABLED", True)),
+        "max_chars": int(getattr(cfg, "WORLDBOOK_MAX_CHARS", 1200)),
+    }
+
+
+@router.post("/books/import")
+async def import_book(body: BookImport) -> dict[str, Any]:
+    worldbook = _worldbook()
+    raw = body.book
+    if raw is None:
+        try:
+            raw = json.loads(body.json_text or "{}")
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"JSON 解析失败：{exc}") from exc
+    try:
+        book = worldbook.book_from_st(raw, fallback_name="导入的世界书", kind=body.kind)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    books = worldbook.load_books(_books_path())
+    books.append(book)
+    worldbook.save_books(_books_path(), books)
+    return {"book": _book_summary(book), "books": [_book_summary(item) for item in books]}
+
+
+@router.delete("/books/{book_id}")
+async def delete_book(book_id: str) -> dict[str, Any]:
+    worldbook = _worldbook()
+    books = [book for book in worldbook.load_books(_books_path()) if book.id != book_id]
+    worldbook.save_books(_books_path(), books)
+    return {"books": [_book_summary(book) for book in books]}
+
+
+@router.put("/books/entry")
+async def update_entry(body: EntryIn) -> dict[str, Any]:
+    worldbook = _worldbook()
+    books = worldbook.load_books(_books_path())
+    for book in books:
+        if book.id != body.book_id:
+            continue
+        for entry in book.entries:
+            if entry.uid != body.uid:
+                continue
+            if body.title is not None:
+                entry.title = body.title
+            if body.content is not None:
+                entry.content = body.content
+            if body.keys is not None:
+                entry.keys = [key.strip() for key in body.keys if key.strip()]
+            if body.enabled is not None:
+                entry.enabled = body.enabled
+            if body.constant is not None:
+                entry.constant = body.constant
+            if body.probability is not None:
+                entry.probability = max(0, min(100, body.probability))
+            worldbook.save_books(_books_path(), books)
+            return {"book": _book_summary(book)}
+    raise HTTPException(status_code=404, detail="没找到这条设定书条目。")
+
+
+@router.get("/books/{book_id}/export")
+async def export_book(book_id: str) -> dict[str, Any]:
+    worldbook = _worldbook()
+    for book in worldbook.load_books(_books_path()):
+        if book.id == book_id:
+            return {"book": worldbook.book_to_st(book)}
+    raise HTTPException(status_code=404, detail="没找到这本设定书。")
 
 
 # ---------------------------------------------------------------------------

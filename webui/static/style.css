@@ -361,3 +361,55 @@ dialog::backdrop{background:#0d111a66}
   .settings-index button{width:auto;white-space:nowrap}
   .settings-body{padding:8px 16px 140px}
 }
+
+
+/* 设定书（世界书 / 角色书） */
+.books-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 16px;
+  flex-wrap: wrap;
+}
+.book-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--panel);
+}
+.book-card > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  list-style: none;
+}
+.book-card > summary::-webkit-details-marker {
+  display: none;
+}
+.book-name {
+  font-weight: 600;
+}
+.book-entry {
+  border-top: 1px dashed var(--line);
+  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.book-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.book-entry input[type="text"],
+.book-entry textarea {
+  width: 100%;
+  min-width: 0;
+}
+.book-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+}

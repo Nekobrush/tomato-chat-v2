@@ -351,3 +351,64 @@ def test_webui_session_uses_config() -> None:
     assert webui_api.WEBUI_TEST_GROUP == cfg.WEBUI_SESSION_GROUP
     assert webui_api.WEBUI_SESSION_BOT_ID == cfg.WEBUI_SESSION_BOT_ID
 
+
+
+def test_books_import_edit_export_delete(client, sandbox, monkeypatch):
+    import bot_config as cfg
+
+    monkeypatch.setattr(cfg, "WORLDBOOK_FILE", sandbox / "webui_books.json")
+    monkeypatch.setattr(cfg, "WORLDBOOK_ENABLED", True)
+
+    world = {
+        "name": "测试世界书",
+        "entries": {
+            "0": {
+                "uid": 0,
+                "key": ["龙"],
+                "keysecondary": [],
+                "comment": "龙族",
+                "content": "龙会说人话。",
+                "constant": False,
+                "selective": True,
+                "selectiveLogic": 0,
+                "order": 100,
+                "position": 0,
+                "disable": False,
+                "probability": 100,
+                "useProbability": True,
+                "depth": 4,
+                "role": 0,
+                "displayIndex": 0,
+            }
+        },
+    }
+
+    imported = client.post("/api/books/import", json={"book": world})
+    assert imported.status_code == 200
+    body = imported.json()
+    book = body["book"]
+    assert book["name"] == "测试世界书"
+    assert book["entries"][0]["title"] == "龙族"
+
+    listed = client.get("/api/books").json()
+    assert len(listed["books"]) == 1
+    assert listed["file"] == "webui_books.json"
+
+    updated = client.put(
+        "/api/books/entry",
+        json={"book_id": book["id"], "uid": 0, "content": "龙喜欢金币。", "enabled": False},
+    )
+    assert updated.status_code == 200
+    entry = updated.json()["book"]["entries"][0]
+    assert entry["content"] == "龙喜欢金币。"
+    assert entry["enabled"] is False
+
+    exported = client.get(f"/api/books/{book['id']}/export").json()["book"]
+    assert exported["entries"]["0"]["content"] == "龙喜欢金币。"
+    assert exported["entries"]["0"]["disable"] is True
+
+    deleted = client.delete(f"/api/books/{book['id']}").json()
+    assert deleted["books"] == []
+
+    assert client.post("/api/books/import", json={"json_text": "not json"}).status_code == 400
+    assert client.put("/api/books/entry", json={"book_id": "missing", "uid": 0}).status_code == 404

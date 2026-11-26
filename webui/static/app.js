@@ -16,6 +16,7 @@
     dirty: false,
     prompts: null,
     promptDirty: false,
+    books: null,
     memory: [],
     memoryGroup: null,
     chat: [],
@@ -1053,7 +1054,7 @@
           })
           .join("")}
       </section>`,
-    ).join("");
+    ).join("") + booksSection;
 
     return `
       <div class="settings-layout">
@@ -1175,12 +1176,148 @@
     return `<textarea data-prompt="${key}" rows="${field.rows || 3}" spellcheck="false">${esc(text)}</textarea>`;
   }
 
+  function renderBooks() {
+    const books = state.books;
+    if (!books) return `<div class="empty" style="padding:16px 0">正在读取设定书…</div>`;
+    const list = books.books || [];
+    const items = list.length
+      ? list
+          .map(
+            (book) => `
+      <details class="book-card" data-book="${esc(book.id)}">
+        <summary>
+          <span class="book-name">${esc(book.name)}</span>
+          <span class="badge">${book.kind === "character" ? "角色书" : "世界书"}</span>
+          <span class="hint">${book.entries.length} 条</span>
+        </summary>
+        ${book.entries
+          .map(
+            (entry) => `
+        <div class="book-entry" data-entry="${entry.uid}">
+          <div class="book-entry-head">
+            <input type="text" data-book-field="title" value="${esc(entry.title)}" placeholder="条目标题">
+            <label class="switch" title="启用这条">
+              <input type="checkbox" data-book-field="enabled" ${entry.enabled ? "checked" : ""}>
+              <span></span>
+            </label>
+          </div>
+          <input type="text" data-book-field="keys" value="${esc(entry.keys.join(", "))}" placeholder="关键词，用逗号分隔">
+          <textarea data-book-field="content" rows="3" spellcheck="false">${esc(entry.content)}</textarea>
+        </div>`,
+          )
+          .join("")}
+        <div class="book-actions">
+          <button type="button" class="ghost" data-action="export-book" data-book="${esc(book.id)}">导出酒馆格式</button>
+          <button type="button" class="danger ghost" data-action="delete-book" data-book="${esc(book.id)}">删除这本书</button>
+        </div>
+      </details>`,
+          )
+          .join("")
+      : `<div class="empty" style="padding:12px 0">还没有设定书。粘贴一份酒馆世界书 JSON 导入试试。</div>`;
+
+    return `
+      <div class="books-toolbar">
+        <button type="button" class="ghost" data-action="import-book">导入酒馆世界书 / 角色卡</button>
+        <span class="hint">支持世界书 v2（entries 为对象）与角色书（entries 为数组）。</span>
+      </div>
+      ${items}`;
+  }
+
+  async function loadBooks() {
+    try {
+      state.books = await api("/books");
+    } catch (error) {
+      state.books = { books: [], error: error.message };
+    }
+    render();
+  }
+
+  function bookFieldTarget(event) {
+    const field = event.target.dataset.bookField;
+    if (!field) return null;
+    const entryEl = event.target.closest("[data-entry]");
+    const bookEl = event.target.closest("[data-book]");
+    if (!entryEl || !bookEl) return null;
+    return { field, entry: entryEl, book: bookEl };
+  }
+
+  async function saveBookEntry(entryEl, bookEl) {
+    const payload = {
+      book_id: bookEl.dataset.book,
+      uid: Number(entryEl.dataset.entry),
+      title: entryEl.querySelector('[data-book-field="title"]').value,
+      keys: entryEl
+        .querySelector('[data-book-field="keys"]')
+        .value.split(/[,，]/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+      content: entryEl.querySelector('[data-book-field="content"]').value,
+      enabled: entryEl.querySelector('[data-book-field="enabled"]').checked,
+    };
+    try {
+      const result = await api("/books/entry", { method: "PUT", body: payload });
+      const index = (state.books.books || []).findIndex((item) => item.id === result.book.id);
+      if (index >= 0) state.books.books[index] = result.book;
+      toast("条目已保存");
+    } catch (error) {
+      toast(`保存失败：${error.message}`);
+    }
+  }
+
+  async function importBook() {
+    const pasted = window.prompt("把酒馆世界书或角色书的 JSON 粘贴到这里：");
+    if (!pasted) return;
+    try {
+      const result = await api("/books/import", { method: "POST", body: { json_text: pasted } });
+      state.books = { books: result.books };
+      toast("已导入");
+      render();
+    } catch (error) {
+      toast(`导入失败：${error.message}`);
+    }
+  }
+
+  async function exportBook(bookId) {
+    try {
+      const data = await api(`/books/${bookId}/export`);
+      const blob = new Blob([JSON.stringify(data.book, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${bookId}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast(`导出失败：${error.message}`);
+    }
+  }
+
+  async function deleteBook(bookId) {
+    const ok = await confirmAction("删除设定书", "删除后无法恢复，确定吗？", "删除");
+    if (!ok) return;
+    try {
+      const result = await api(`/books/${bookId}`, { method: "DELETE" });
+      state.books = { books: result.books };
+      render();
+      toast("已删除");
+    } catch (error) {
+      toast(`删除失败：${error.message}`);
+    }
+  }
+
   function viewPrompts() {
     if (!state.prompts) return `<div class="empty" style="padding:40px 0">正在读取提示词…</div>`;
     const values = state.prompts.values || {};
+    const booksIndex = `<button type="button" data-prompt-scroll="${PROMPT_GROUPS.length}">设定书</button>`;
+    const booksSection = `
+      <section class="setting-group" id="prompt-group-${PROMPT_GROUPS.length}">
+        <h3>设定书（世界书 / 角色书）</h3>
+        <p>酒馆格式。命中关键词的条目会拼进每轮消息的尾部（不是真的插在角色定义前后——LM Studio 的模板不允许中途出现 system 消息）。</p>
+        ${renderBooks()}
+      </section>`;
     const index = PROMPT_GROUPS.map(
       (group, offset) => `<button type="button" data-prompt-scroll="${offset}" class="${offset === 0 ? "active" : ""}">${esc(group.title)}</button>`,
-    ).join("");
+    ).join("") + booksIndex;
     const body = PROMPT_GROUPS.map(
       (group, offset) => `
       <section class="setting-group" id="prompt-group-${offset}">
@@ -1201,7 +1338,7 @@
           })
           .join("")}
       </section>`,
-    ).join("");
+    ).join("") + booksSection;
 
     return `
       <div class="settings-layout">
@@ -1368,7 +1505,10 @@
     if (view === "prompts") {
       state.promptDirty = false;
       if (!state.prompts) loadPrompts().then(() => {
-        if (state.view === "prompts") render();
+        if (state.view === "prompts") {
+      if (!state.books) loadBooks();
+      render();
+    }
       });
     }
     render();
@@ -1514,6 +1654,17 @@
   }
 
   function bindEvents() {
+
+  // 设定书条目的改动走独立保存（不标脏提示词、也不进保存栏）
+  document.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!target || !target.dataset) return;
+    if (!target.dataset.bookField) return;
+    const entryEl = target.closest("[data-entry]");
+    const bookEl = target.closest("[data-book]");
+    if (entryEl && bookEl) saveBookEntry(entryEl, bookEl);
+  });
+
     $("#group-search").addEventListener("input", (event) => {
       state.search = event.target.value;
       renderSidebar();
@@ -1792,6 +1943,15 @@
       case "save-config":
         saveConfig();
         break;
+      case "import-book":
+        importBook();
+        return;
+      case "export-book":
+        exportBook(element.dataset.book);
+        return;
+      case "delete-book":
+        deleteBook(element.dataset.book);
+        return;
       case "save-prompts":
         savePrompts();
         break;

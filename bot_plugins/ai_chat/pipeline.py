@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import pathlib
 import random
 import re
 import time
@@ -15,7 +16,7 @@ from nonebot.log import logger
 
 import bot_config as cfg
 
-from . import prompts
+from . import prompts, worldbook
 from .memory import (
     DEFAULT_MARK,
     PERSISTENCE_MARK,
@@ -48,6 +49,9 @@ _IMAGE_CACHE: dict[str, list[Path]] = {}
 
 # 最近几条用户消息保留完整时间戳前缀，更早的剥掉以压缩 prompt（本地 prefill 是真花钱）
 KEEP_PREFIX_RECORDS = 2
+
+_books_cache: list[worldbook.Book] | None = None
+_books_mtime: int | None = None
 
 _TIMESTAMP_PREFIX = re.compile(r"^\[\d{10,16}\]")
 
@@ -163,6 +167,42 @@ def _strip_timestamp(content: str) -> str:
     return cleaned.strip() or content.strip()
 
 
+def books() -> list[worldbook.Book]:
+    """读取设定书文件；按 mtime 缓存，改完文件不用重启。"""
+    global _books_cache, _books_mtime
+    if not getattr(cfg, "WORLDBOOK_ENABLED", True):
+        return []
+    path = pathlib.Path(cfg.WORLDBOOK_FILE)
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        _books_cache, _books_mtime = [], None
+        return []
+    if _books_cache is None or _books_mtime != mtime:
+        _books_cache = worldbook.load_books(path)
+        _books_mtime = mtime
+        logger.info("已加载 %d 本设定书", len(_books_cache))
+    return _books_cache
+
+
+def book_hint(group_id: str) -> str:
+    """把命中的设定书条目拼成一段尾部提示（没有命中就返回空串）。"""
+    books_loaded = books()
+    if not books_loaded:
+        return ""
+    scan = [record.content for record in store.records(group_id)[-6:] if record.role == "user"]
+    if not scan:
+        return ""
+    hits = worldbook.match_entries(
+        books_loaded,
+        scan,
+        max_chars=int(getattr(cfg, "WORLDBOOK_MAX_CHARS", 1200)),
+    )
+    if not hits:
+        return ""
+    return "【设定书】\n" + "\n".join(hits)
+
+
 def memory_budget() -> int:
     """记忆能占多少 token。
 
@@ -230,6 +270,11 @@ def build_messages(
         messages.append({"role": record.role, "content": content})
 
     tail_parts = [system_context(bot_id)["content"], *volatile_system]
+    hint = book_hint(group_id)
+    if hint:
+        # 设定书命中：放在时间/纠错之后、场景与聚焦之前——比纠错重要，但不如
+        # 「这一轮到底回谁」的聚焦指令重要。
+        tail_parts.append(hint)
     if note:
         # 场景说明（比如「这是私聊」）也放尾部，避免污染稳定前缀
         tail_parts.append(note)
