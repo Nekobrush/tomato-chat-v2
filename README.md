@@ -23,7 +23,9 @@ multimodal image input.
   OpenAI chat-completions API. Sources are declared in `bot_config.MODELS`; context size,
   concurrency and vision support can be set per source.
 - **Web console** at `http://127.0.0.1:8765/webui/` — live status, per-group switches,
-  model switching, log viewer, test chat (drag & drop images), and a prompt editor.
+  model switching, log viewer, test chat (drag & drop images), and a prompt editor. The
+  "Models & settings" and "Persona & prompts" tabs paginate by category in the left index
+  (one page at a time) instead of scrolling a single long page.
 - **Editable persona** — the persona is split into three layers (stable prefix, speaking
   style, character sheet) plus few-shot examples, correction tips, fallback copy and scene
   notes; all of it lives in `webui_prompts.json` and can be edited in the browser. Nothing

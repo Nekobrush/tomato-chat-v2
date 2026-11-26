@@ -14,8 +14,10 @@
     fields: [],
     config: null,
     dirty: false,
+    settingsSection: 0,
     prompts: null,
     promptDirty: false,
+    promptSection: 0,
     books: null,
     memory: [],
     memoryGroup: null,
@@ -30,6 +32,23 @@
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const clampSection = (value, total) => {
+    const index = Number.isFinite(Number(value)) ? Number(value) : 0;
+    return Math.min(Math.max(0, Math.trunc(index)), Math.max(0, total - 1));
+  };
+  const switchSection = (button) => {
+    const layout = button.closest(".settings-layout");
+    if (!layout) return;
+    const target = button.dataset.section ?? button.dataset.promptSection;
+    layout.querySelectorAll(".setting-group").forEach((section) => {
+      section.classList.toggle("is-active", section.dataset.sectionIndex === String(target));
+    });
+    layout.querySelectorAll(".settings-index button").forEach((item) => {
+      item.classList.toggle("active", item === button);
+    });
+    const body = layout.querySelector(".settings-body");
+    if (body) body.scrollTop = 0;
+  };
   const esc = (value) =>
     String(value ?? "").replace(/[&<>"']/g, (ch) => ({
       "&": "&amp;",
@@ -1029,12 +1048,13 @@
 
   function viewSettings() {
     const values = state.config || {};
+    const active = clampSection(state.settingsSection, SETTING_GROUPS.length);
     const index = SETTING_GROUPS.map(
-      (group, index) => `<button type="button" data-scroll="${index}" class="${index === 0 ? "active" : ""}">${esc(group.title)}</button>`,
+      (group, index) => `<button type="button" data-section="${index}" class="${index === active ? "active" : ""}">${esc(group.title)}</button>`,
     ).join("");
     const body = SETTING_GROUPS.map(
       (group, index) => `
-      <section class="setting-group" id="setting-group-${index}" data-group-index="${index}">
+      <section class="setting-group${index === active ? " is-active" : ""}" id="setting-group-${index}" data-section-index="${index}">
         <h3>${esc(group.title)}</h3>
         <p>${esc(group.desc)}</p>
         ${group.keys
@@ -1057,7 +1077,7 @@
     ).join("");
 
     return `
-      <div class="settings-layout">
+      <div class="settings-layout is-paged">
         <nav class="settings-index" aria-label="设置分类">${index}</nav>
         <div class="settings-body">
           ${body}
@@ -1408,16 +1428,17 @@
     const values = state.prompts.values || {};
     const booksOffset = PROMPT_GROUPS.length;
     const previewOffset = booksOffset + 1;
-    const booksIndex = `<button type="button" data-prompt-scroll="${booksOffset}">设定书</button>`;
-    const previewIndex = `<button type="button" data-prompt-scroll="${previewOffset}">调试预览</button>`;
+    const active = clampSection(state.promptSection, previewOffset + 1);
+    const booksIndex = `<button type="button" data-prompt-section="${booksOffset}" class="${active === booksOffset ? "active" : ""}">设定书</button>`;
+    const previewIndex = `<button type="button" data-prompt-section="${previewOffset}" class="${active === previewOffset ? "active" : ""}">调试预览</button>`;
     const booksSection = `
-      <section class="setting-group" id="prompt-group-${booksOffset}">
+      <section class="setting-group${active === booksOffset ? " is-active" : ""}" id="prompt-group-${booksOffset}" data-section-index="${booksOffset}">
         <h3>设定书（世界书 / 角色书）</h3>
         <p>酒馆格式。命中关键词的条目会拼进每轮消息的尾部（不是真的插在角色定义前后——LM Studio 的模板不允许中途出现 system 消息）。</p>
         ${renderBooks()}
       </section>`;
     const previewSection = `
-      <section class="setting-group" id="prompt-group-${previewOffset}">
+      <section class="setting-group${active === previewOffset ? " is-active" : ""}" id="prompt-group-${previewOffset}" data-section-index="${previewOffset}">
         <h3>调试预览</h3>
         <p>看看这一轮实际会发给模型什么：稳定前缀、示例、记忆，以及尾部拼上的时间、设定书与纠正提示。</p>
         <div class="preview-controls">
@@ -1427,11 +1448,11 @@
         <div id="preview-out" class="preview-out"></div>
       </section>`;
     const index = PROMPT_GROUPS.map(
-      (group, offset) => `<button type="button" data-prompt-scroll="${offset}" class="${offset === 0 ? "active" : ""}">${esc(group.title)}</button>`,
+      (group, offset) => `<button type="button" data-prompt-section="${offset}" class="${offset === active ? "active" : ""}">${esc(group.title)}</button>`,
     ).join("") + booksIndex + previewIndex;
     const body = PROMPT_GROUPS.map(
       (group, offset) => `
-      <section class="setting-group" id="prompt-group-${offset}">
+      <section class="setting-group${offset === active ? " is-active" : ""}" id="prompt-group-${offset}" data-section-index="${offset}">
         <h3>${esc(group.title)}</h3>
         ${group.desc ? `<p>${esc(group.desc)}</p>` : ""}
         ${group.keys
@@ -1452,7 +1473,7 @@
     ).join("") + booksSection + previewSection;
 
     return `
-      <div class="settings-layout">
+      <div class="settings-layout is-paged">
         <nav class="settings-index" aria-label="提示词分类">${index}</nav>
         <div class="settings-body">${body}</div>
       </div>
@@ -1808,18 +1829,16 @@
         if (state.tab === "chat") loadChatHistory().then(() => renderChatMessages());
         return;
       }
-      const scrollButton = event.target.closest("[data-scroll]");
-      if (scrollButton) {
-        const section = $(`#setting-group-${scrollButton.dataset.scroll}`);
-        if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
-        $$(".settings-index button").forEach((button) => button.classList.toggle("active", button === scrollButton));
+      const sectionButton = event.target.closest("[data-section]");
+      if (sectionButton) {
+        state.settingsSection = Number(sectionButton.dataset.section);
+        switchSection(sectionButton);
         return;
       }
-      const promptScroll = event.target.closest("[data-prompt-scroll]");
-      if (promptScroll) {
-        const section = $(`#prompt-group-${promptScroll.dataset.promptScroll}`);
-        if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
-        $$(".settings-index button").forEach((button) => button.classList.toggle("active", button === promptScroll));
+      const promptSectionButton = event.target.closest("[data-prompt-section]");
+      if (promptSectionButton) {
+        state.promptSection = Number(promptSectionButton.dataset.promptSection);
+        switchSection(promptSectionButton);
         return;
       }
       const action = event.target.closest("[data-action]");

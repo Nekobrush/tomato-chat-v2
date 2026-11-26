@@ -267,6 +267,10 @@ h1{font-size:20px;font-weight:650;line-height:1.35;overflow:hidden;text-overflow
 .setting-group{padding-top:22px}
 .setting-group>h3{font-size:16px}
 .setting-group>p{font-size:13px;color:var(--ink-3);padding-bottom:4px}
+/* 分页模式：左侧索引点一下换一页，而不是滚动定位 */
+.settings-layout.is-paged .setting-group{display:none}
+.settings-layout.is-paged .setting-group.is-active{display:block;padding-top:10px}
+.settings-layout.is-paged .settings-body{padding-top:16px}
 .setting{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,440px);gap:6px 32px;align-items:start;padding:15px 0;border-bottom:1px solid var(--line)}
 .setting.prompt-setting{grid-template-columns:minmax(220px,1fr) minmax(320px,760px)}
 .prompt-setting .setting-control{flex-direction:column;align-items:stretch;justify-content:flex-start}
